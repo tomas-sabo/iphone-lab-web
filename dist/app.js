@@ -1,29 +1,12 @@
-const VERSION='1.0.3';
-const $=id=>document.getElementById(id);
-const storage={get(k,fallback){try{return localStorage.getItem(k)??fallback}catch{return fallback}},set(k,v){try{localStorage.setItem(k,v);return true}catch{return false}}};
-let count=Number(storage.get('lab.count','0'));if(!Number.isSafeInteger(count)||count<0)count=0;
-function renderCount(){ $('count').textContent=count; }
-function saveCount(){renderCount();if(!storage.set('lab.count',String(count)))$('counter-status').textContent='Úložisko nie je dostupné. Hodnota zostane iba počas otvorenia.'}
-renderCount();$('increment').onclick=()=>{if(count<999999999){count++;saveCount()}};
-$('reset').onclick=()=>{if(count===0)return;if(confirm('Vynulovať počítadlo?')){count=0;saveCount()}};
-$('note').value=storage.get('lab.note','');
-function noteLength(){$('note-length').textContent=`${$('note').value.length} / 5000`};noteLength();
-$('note').addEventListener('input',()=>{noteLength();$('save-status').textContent=storage.set('lab.note',$('note').value)?'Uložené v tomto zariadení ✓':'Nepodarilo sa uložiť. Skopíruj si poznámku.'});
-function connection(){$('connection').textContent=navigator.onLine?'Online':'Bez internetu';$('connection').classList.toggle('offline',!navigator.onLine)}
-connection();window.addEventListener('online',connection);window.addEventListener('offline',connection);
-$('version').textContent=`v${VERSION}`;
-$('install-help').onclick=()=>$('help').showModal();$('close-help').onclick=()=>$('help').close();
-if(matchMedia('(display-mode: standalone)').matches||navigator.standalone){$('install-copy').textContent='Lab už máš otvorený ako aplikáciu. Aktualizácie si skontroluje pri otvorení a po návrate na internet.';$('install-help').hidden=true}
-let installPrompt;
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('install-native').hidden=false});
-$('install-native').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;$('install-native').hidden=true}};
-let registration,reloading=false;
-function waiting(){if(registration?.waiting)$('update').hidden=false}
-if('serviceWorker' in navigator){
- navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>{registration=r;waiting();r.addEventListener('updatefound',()=>{const w=r.installing;w?.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)waiting()})});r.update().catch(()=>{})}).catch(()=>{$('update-status').textContent='Offline režim sa nepodarilo pripraviť.'});
- navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;reloading=true;location.reload()});
-}
-$('apply-update').onclick=()=>registration?.waiting?.postMessage({type:'SKIP_WAITING'});
-$('check-update').onclick=async()=>{const b=$('check-update');b.disabled=true;$('update-status').textContent='Kontrolujem…';try{if(!navigator.onLine)throw Error('offline');await registration?.update();waiting();$('update-status').textContent=registration?.waiting?'Nová verzia je pripravená.':'Kontrola dokončená. Ak je nová verzia, zobrazí sa oznámenie.'}catch{$('update-status').textContent='Teraz sa nedá pripojiť. Skús to po pripojení na internet.'}finally{b.disabled=false}};
+const VERSION='1.0.4';
+const button=document.getElementById('update');
+const status=document.getElementById('status');
+document.getElementById('version').textContent=`Verzia ${VERSION}`;
+let registration,busy=false,reloading=false;
+function applyWaiting(){if(!registration?.waiting)return false;status.textContent='Aktualizujem…';registration.waiting.postMessage({type:'SKIP_WAITING'});return true}
+const ready='serviceWorker' in navigator?navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(r=>{registration=r;r.addEventListener('updatefound',()=>{const worker=r.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed'&&navigator.serviceWorker.controller){if(busy)applyWaiting();else status.textContent='Nová verzia je pripravená.'}})});if(r.waiting)status.textContent='Nová verzia je pripravená.';return r}):Promise.reject(new Error('unsupported'));
+ready.catch(()=>{status.textContent='Aktualizácie sa nepodarilo pripraviť. Otvor aplikáciu cez Safari.'});
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;reloading=true;location.reload()});
+button.onclick=async()=>{if(busy)return;busy=true;button.disabled=true;status.textContent='Kontrolujem aktualizáciu…';try{await ready;if(applyWaiting())return;if(!navigator.onLine)throw new Error('offline');await registration.update();if(applyWaiting())return;const worker=registration.installing;if(worker){await new Promise((resolve,reject)=>{const changed=()=>{if(worker.state==='installed')resolve();else if(worker.state==='redundant')reject(new Error('install failed'))};worker.addEventListener('statechange',changed);changed()});if(applyWaiting())return}status.textContent='Máš najnovšiu verziu.'}catch{status.textContent='Aktualizácia sa nepodarila. Skontroluj internet a skús znova.'}finally{busy=false;button.disabled=false}};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)registration?.update().catch(()=>{})});
 window.addEventListener('online',()=>registration?.update().catch(()=>{}));
