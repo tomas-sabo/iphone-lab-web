@@ -1,4 +1,4 @@
-const VERSION='1.0.2';
+const VERSION='1.0.3';
 const $=id=>document.getElementById(id);
 const storage={get(k,fallback){try{return localStorage.getItem(k)??fallback}catch{return fallback}},set(k,v){try{localStorage.setItem(k,v);return true}catch{return false}}};
 let count=Number(storage.get('lab.count','0'));if(!Number.isSafeInteger(count)||count<0)count=0;
