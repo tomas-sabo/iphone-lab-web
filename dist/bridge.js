@@ -1,5 +1,5 @@
 const REPO='tomas-sabo/bridge',PREFIX='operator/requests';
-const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['robota','Robota']];
+const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['robota','Robota'],['whatsapp','WhatsApp'],['instagram','Instagram']];
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
@@ -151,7 +151,7 @@ window.addEventListener('pagehide',()=>{token='';items=[];lastRefresh=0;render()
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
-restorePairing();
+render();restorePairing();
 
 // Only aggregate progress polls automatically. Requests and decisions stay manual.
 function pollProgress(){if(token&&!working&&document.visibilityState!=='hidden'&&Date.now()>=readPause())return loadProgress()}
