@@ -3,7 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
-const drafts=new Map();
+const drafts=new Map(),groupOpen=new Map();
 let lastApiCall=0,lastRefresh=0;
 const RATE_KEY='iphone-lab-github-pause-until';
 function readPause(){try{return Number(localStorage.getItem(RATE_KEY))||0}catch{return 0}}
@@ -49,7 +49,9 @@ function render(){
   const group=element('details',undefined,'request-group');
   const matches=items.filter(item=>item.record.request.source===source);
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
+  group.open=groupOpen.has(source)?groupOpen.get(source):pending>0;
   const heading=element('summary',name,'group-heading');
+  heading.onclick=()=>groupOpen.set(source,!group.open);
   heading.append(element('span',`${pending}/${matches.length}`,'group-count'));
   group.append(heading);
   if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
@@ -99,7 +101,7 @@ async function readProgress(){
   $('tinder-eta').textContent=p.phase==='complete'?'Séria je dokončená.':p.phase==='paused'?'Odosielanie je pozastavené.':p.phase==='awaiting_operator'?'Odhad dokončenia: čaká na tvoje odpovede.':p.phase==='attention'?'Pokračovanie potrebuje kontrolu.':Number.isFinite(p.eta_seconds)&&p.eta_seconds>=0?`Odhad zostávajúceho času: približne ${Math.max(1,Math.ceil(p.eta_seconds/60))} min.`:'Odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
  }catch{$('tinder-overall-eta').textContent='Celkový odhad nie je dostupný — údaje sa neobnovili.';$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Zobrazené počty môžu byť staršie.';$('tinder-eta').textContent='Skontroluj pripojenie a zopakuj synchronizáciu.'}
 }
-async function refresh(){try{const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();message(items.length?`Načítané požiadavky: ${items.length}.`:'Žiadne požiadavky.');}finally{if(token)await loadProgress();}}
+async function refresh(){try{const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}finally{if(token)await loadProgress();}}
 async function decide(item,outcome,comment='',permission=null){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){
  if(working||!token)return;
@@ -154,4 +156,10 @@ restorePairing();
 // Only aggregate progress polls automatically. Requests and decisions stay manual.
 function pollProgress(){if(token&&!working&&document.visibilityState!=='hidden'&&Date.now()>=readPause())return loadProgress()}
 setInterval(pollProgress,15000);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='hidden')pollProgress()});
+document.addEventListener('visibilitychange',async()=>{
+ if(document.visibilityState==='hidden'||working)return;
+ if(!token){await restorePairing();return}
+ working=true;render();
+ try{await refresh()}catch(e){message(e.message||'Požiadavky sa nepodarilo obnoviť.')}
+ finally{working=false;render()}
+});
