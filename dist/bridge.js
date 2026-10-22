@@ -31,7 +31,7 @@ async function api(path,options={}){
  const remaining=response.headers?.get('X-RateLimit-Remaining'),reset=Number(response.headers?.get('X-RateLimit-Reset')||0)*1000,retry=Number(response.headers?.get('Retry-After')||0)*1000;
  if(remaining!==null&&remaining!==undefined&&Number(remaining)<20)pauseUntil(Math.max(Date.now()+60000,reset+5000));
  if(!response.ok){
-  if(response.status===401){forgetPairing();token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
+  if(response.status===401){forgetPairing();resetConversations(true);token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
   if([403,429].includes(response.status)){
    const until=Math.max(Date.now()+Math.max(retry,60000),remaining==='0'?reset+5000:0);pauseUntil(until);
    throw Error(`GitHub dočasne odmietol požiadavku. Ďalší pokus po ${new Date(until).toLocaleTimeString('sk-SK')}. Párovanie zostáva uložené.`);
@@ -97,13 +97,89 @@ function render(){
   }
  }
 
+ const manualNames=[...new Set([...whatsappManual,...conversationIndex.map(c=>c.name)])];
  const manual=element('details',undefined,'request-group manual-contacts');manual.open=groupOpen.get('manual-contacts')||false;
- const title=element('summary',`Manuálne (${whatsappManual.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
- const list=element('ul',undefined,'contact-list');for(const name of whatsappManual)list.append(contactEntry(name));
- manual.append(title,list);if(!whatsappManual.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
+ const title=element('summary',`Manuálne (${manualNames.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
+ const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name));
+ manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
 }
 let progressLoading=null;
+// Private conversation details are fetched only after an explicit contact tap.
+const CONVERSATION_DRAFTS_KEY='iphone-lab-conversation-work-v1';
+let conversationIndex=[],conversationStatus='',activeConversation=null,conversationBusy=false;
+function conversationWork(){try{return JSON.parse(localStorage.getItem(CONVERSATION_DRAFTS_KEY)||'{}')}catch{return {}}}
+function rememberConversationWork(){
+ if(!activeConversation)return;
+ const data=conversationWork();data[activeConversation.record.id]={text:$('conversation-text').value,notes:$('conversation-notes').value,snapshot_sha256:activeConversation.record.snapshot_sha256};
+ try{localStorage.setItem(CONVERSATION_DRAFTS_KEY,JSON.stringify(data))}catch{$('conversation-feedback').textContent='Zariadenie neuložilo pracovný text. Použi Uložiť pracovný text.'}
+}
+function resetConversations(forget=false){conversationIndex=[];activeConversation=null;$('conversation-dialog').close?.();$('conversation-body').replaceChildren();if(forget)try{localStorage.removeItem(CONVERSATION_DRAFTS_KEY)}catch{}}
+async function loadConversationIndex(){
+ try{
+  const file=await api('/contents/operator/conversations/index.json?ref=main'),data=decode(file.content);
+  if(data.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>20||!data.contacts.every(c=>UUID.test(c.id)&&typeof c.name==='string'&&c.name.length<=160&&['user','rafi'].includes(c.owner)))throw Error('Invalid private index');
+  conversationIndex=data.contacts;conversationStatus='';
+ }catch(e){if(e.status===404)conversationIndex=[];else conversationStatus='Detail manuálnych komunikácií sa neobnovil. Zopakuj synchronizáciu.'}
+ render();
+}
+async function validateConversation(record,id){
+ if(record.schema_version!==1||record.id!==id||!UUID.test(id)||!UUID.test(record.revision)||typeof record.name!=='string'||record.name.length>160||!['user','rafi'].includes(record.owner))throw Error('Neplatný detail komunikácie.');
+ const s=record.snapshot;
+ if(!s||!s.profile||typeof s.profile!=='object'||!Array.isArray(s.history)||!s.history.length||s.history.length>10000||!s.history.every(m=>['user','other'].includes(m.sender)&&typeof m.text==='string'&&m.text.length<=20000&&Number.isFinite(Date.parse(m.sent_at)))||await hash(s)!==record.snapshot_sha256)throw Error('Prázdny alebo neplatný snapshot.');
+ if(typeof record.rafi_draft?.text!=='string'||record.rafi_draft.text.length>10000||typeof record.operator_text!=='string'||record.operator_text.length>10000||typeof record.operator_notes!=='string'||record.operator_notes.length>20000)throw Error('Neplatný pracovný text.');
+ if(record.rafi_draft.snapshot_sha256!==record.snapshot_sha256&&record.rafi_draft.status!=='stale')throw Error('Návrh nepatrí k snapshotu.');
+ const h=record.handoff;
+ if(h){if(!UUID.test(h.id)||!['pending','accepted','stale'].includes(h.status)||h.snapshot_sha256!==record.snapshot_sha256||await hash({snapshot_sha256:record.snapshot_sha256,operator_text:record.operator_text,operator_notes:record.operator_notes,handoff_id:h.id})!==h.context_sha256)throw Error('Neplatné odovzdanie.');}
+ return record;
+}
+function ownerText(record){return record.handoff?.status==='pending'?'Tomy → Rafi: čaká na spracovanie':record.handoff?.status==='stale'?'Tomy: konflikt snapshotu, návrat je zablokovaný':record.owner==='user'?'Komunikáciu riadi Tomy':'Rafi: iba príprava nového návrhu'}
+function profileText(value){if(value===null)return '';if(Array.isArray(value))return value.map(profileText).filter(Boolean).join('\n');if(typeof value==='object')return Object.entries(value).map(([key,v])=>{const t=profileText(v);return t?`${({name:'Názov',title:'Pozícia',company:'Firma'})[key]||key}: ${t}`:''}).filter(Boolean).join('\n');return String(value)}
+function showConversation(record,sha){
+ activeConversation={record,sha};const body=$('conversation-body');body.replaceChildren();
+ body.append(element('h2',record.name),element('p',ownerText(record),'conversation-owner'),element('p',`Historický Tinder snapshot · ${record.snapshot.history.length} správ · posledná správa ${new Date(record.snapshot.history.at(-1).sent_at).toLocaleString('sk-SK')}. Nové, zmazané ani WhatsApp správy nemusia byť zahrnuté.`,'hint'));
+ const profile=element('details',undefined,'conversation-profile');profile.append(element('summary','Profil'));
+ for(const [key,value] of Object.entries(record.snapshot.profile)){const t=profileText(value);if(t)profile.append(element('h4',({name:'Meno',bio:'O nej',jobs:'Práca',schools:'Školy',selected_descriptors:'Charakteristiky',relationship_intent:'Zámer'})[key]||key),element('p',t,'context'))}
+ body.append(profile);
+ const history=element('details',undefined,'conversation-history');history.append(element('summary','Celá dostupná história'));
+ const list=element('ol');for(const m of [...record.snapshot.history].sort((a,b)=>Date.parse(a.sent_at)-Date.parse(b.sent_at))){const row=element('li');row.append(element('strong',m.sender==='user'?'Tomy':record.snapshot.profile.name||'Kontakt'),element('small',new Date(m.sent_at).toLocaleString('sk-SK')),element('p',m.text,'context'));list.append(row)}history.append(list);body.append(history);
+ const proposal=element('details',undefined,'conversation-proposal');proposal.append(element('summary',record.rafi_draft.status==='stale'?'Predošlý návrh — vyžaduje prepracovanie':'Návrh Rafiho — neodoslaný'),element('p',record.rafi_draft.text,'context'),element('small','Návrh na tvoju úpravu. Osobné tvrdenia treba overiť; text nie je schválená správa ani záväzok stretnutia.'));body.append(proposal);
+ const work=conversationWork()[record.id];
+ const label=element('label','Tvoj pracovný text — neodoslaný');label.htmlFor='conversation-text';const input=element('textarea');input.id=label.htmlFor;input.rows=6;input.maxLength=10000;input.value=work?.text??record.operator_text;input.oninput=rememberConversationWork;
+ const noteLabel=element('label','Nové informácie alebo poznámky pre Rafiho');noteLabel.htmlFor='conversation-notes';const notes=element('textarea');notes.id=noteLabel.htmlFor;notes.rows=4;notes.maxLength=20000;notes.value=work?.notes??record.operator_notes;notes.oninput=rememberConversationWork;
+ const locked=record.owner!=='user'||Boolean(record.handoff);input.disabled=locked;notes.disabled=locked;
+ const save=element('button','Uložiť pracovný text');save.type='button';save.disabled=locked;save.onclick=()=>saveConversation(false);
+ const back=element('button','Vrátiť Rafimu','secondary');back.type='button';back.disabled=locked;back.onclick=()=>saveConversation(true);
+ const feedback=element('p','','hint');feedback.id='conversation-feedback';feedback.setAttribute?.('role','status');
+ if(work&&work.snapshot_sha256!==record.snapshot_sha256){feedback.textContent='Snapshot sa zmenil. Tvoj text zostal zachovaný; pred odovzdaním vyrieš konflikt.';save.disabled=true;back.disabled=true;}
+ body.append(label,input,noteLabel,notes,element('small','Uloženie ani návrat Rafimu správu neodošle. Poznámky sa nezapisujú do histórie ako odoslané správy.'),save,back,feedback);
+}
+async function openConversation(id){
+ if(!token||working||conversationBusy||$('manual-dialog').open||!conversationIndex.some(c=>c.id===id))return;
+ conversationBusy=true;message('Načítavam súkromný detail…');
+ try{const file=await api(`/contents/operator/conversations/${id}.json?ref=main`),record=await validateConversation(decode(file.content),id);showConversation(record,file.sha);$('conversation-dialog').showModal();message('Súkromný detail bol načítaný.')}
+ catch(e){message(e.message||'Detail sa nepodarilo načítať.')}
+ finally{conversationBusy=false}
+}
+async function saveConversation(returnToRafi){
+ if(!activeConversation||!token||conversationBusy||activeConversation.record.owner!=='user'||activeConversation.record.handoff)return;
+ const text=$('conversation-text').value,notes=$('conversation-notes').value;rememberConversationWork();
+ if(returnToRafi&&!confirm('Vrátiť komunikáciu Rafimu na prípravu NOVÉHO návrhu?\n\nPracovný text a poznámky sa zachovajú. Nič sa neodošle a odosielanie zostane pozastavené.'))return;
+ conversationBusy=true;
+ try{
+  const id=activeConversation.record.id,file=await api(`/contents/operator/conversations/${id}.json?ref=main`),record=await validateConversation(decode(file.content),id);
+  if(file.sha!==activeConversation.sha||record.revision!==activeConversation.record.revision||record.snapshot_sha256!==activeConversation.record.snapshot_sha256||record.owner!=='user'||record.handoff)throw Error('Detail sa zmenil. Tvoj text zostal lokálne uložený; zavri detail a znovu ho otvor.');
+  record.operator_text=text;record.operator_notes=notes;record.revision=crypto.randomUUID();record.updated_at=new Date().toISOString();
+  if(returnToRafi){const hid=crypto.randomUUID();record.owner='rafi';record.sync_status='return_pending';record.handoff={id:hid,status:'pending',created_at:record.updated_at,snapshot_sha256:record.snapshot_sha256,context_sha256:await hash({snapshot_sha256:record.snapshot_sha256,operator_text:text,operator_notes:notes,handoff_id:hid})};}
+  const saved=await api(`/contents/operator/conversations/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:returnToRafi?'Request private conversation handoff':'Save private operator work text',content:encode(record)})});
+  const local=conversationWork();delete local[id];try{localStorage.setItem(CONVERSATION_DRAFTS_KEY,JSON.stringify(local))}catch{}
+  showConversation(record,saved.content?.sha||file.sha);$('conversation-feedback').textContent=returnToRafi?'Žiadosť je uložená. Čaká na lokálne spracovanie; nič sa neodoslalo.':'Pracovný text je súkromne uložený. Nič sa neodoslalo.';
+ }catch(e){$('conversation-feedback').textContent=e.message||'Uloženie zlyhalo. Pracovný text zostal v tomto zariadení.'}
+ finally{conversationBusy=false}
+}
+$('conversation-close').onclick=()=>{rememberConversationWork();$('conversation-dialog').close();activeConversation=null};
+$('conversation-dialog').oncancel=()=>{rememberConversationWork();activeConversation=null};
+
 function validateContacts(data){
  if(data.schema_version!==1||!Array.isArray(data.names)||data.names.length>2000||!data.names.every(name=>typeof name==='string'&&name.length<=160&&name.trim().length>0&&!/[\u0000-\u001f]/.test(name))||new Set(data.names).size!==data.names.length)throw Error('Invalid contact list');
  const assigned=data.paired_names,unassigned=data.unpaired_names;
@@ -124,11 +200,12 @@ async function loadWhatsAppNames(){
 }
 let selectedManualContact=null;
 function showManualChoice(name){
+ const detail=conversationIndex.find(c=>c.name===name);if(detail)return openConversation(detail.id);
  if(working||!token||!whatsappNames.includes(name)||$('manual-dialog').open)return;
  selectedManualContact=name;$('manual-contact-name').textContent=name;$('manual-dialog').showModal();
 }
 function contactEntry(name){
- const row=element('li'),button=element('button',name,'contact-name');button.type='button';button.disabled=working;
+ const row=element('li'),button=element('button',name,'contact-name');const detail=conversationIndex.find(c=>c.name===name);if(detail)button.onclick=()=>openConversation(detail.id);button.type='button';button.disabled=working;
  button.setAttribute?.('aria-label',`${name} — podržať pre voľbu Manuálne`);
  let hold=null,start=null;
  const cancel=()=>{if(hold!==null)clearTimeout(hold);hold=null;start=null};
@@ -136,7 +213,7 @@ function contactEntry(name){
  button.onpointermove=e=>{if(start&&Math.hypot(e.clientX-start[0],e.clientY-start[1])>10)cancel()};
  button.onpointerup=cancel;button.onpointercancel=cancel;button.onpointerleave=cancel;
  button.oncontextmenu=e=>{e.preventDefault();cancel();showManualChoice(name)};
- button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showManualChoice(name)}};
+ button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();detail?openConversation(detail.id):showManualChoice(name)}};
  row.append(button);return row;
 }
 async function saveManualChoice(manual){
@@ -176,7 +253,7 @@ async function readProgress(){
   $('tinder-eta').textContent=p.phase==='complete'?'Séria je dokončená.':p.phase==='paused'?'Odosielanie je pozastavené.':p.phase==='awaiting_operator'?'Odhad dokončenia: čaká na tvoje odpovede.':p.phase==='attention'?'Pokračovanie potrebuje kontrolu.':Number.isFinite(p.eta_seconds)&&p.eta_seconds>=0?`Odhad zostávajúceho času: približne ${Math.max(1,Math.ceil(p.eta_seconds/60))} min.`:'Odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
  }catch{$('tinder-overall-eta').textContent='Celkový odhad nie je dostupný — údaje sa neobnovili.';$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Zobrazené počty môžu byť staršie.';$('tinder-eta').textContent='Skontroluj pripojenie a zopakuj synchronizáciu.'}
 }
-async function refresh(){try{const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}finally{if(token){await loadProgress();if(token)await loadWhatsAppNames();}}}
+async function refresh(){try{const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}finally{if(token){await loadProgress();if(token){await loadWhatsAppNames();await loadConversationIndex();}}}}
 async function decide(item,outcome,comment='',permission=null){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){
  if(working||!token)return;
@@ -221,8 +298,8 @@ $('refresh').onclick=async()=>{
  }catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;button.disabled=false;render()}
 };
-$('disconnect').onclick=()=>{forgetPairing();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
-window.addEventListener('pagehide',()=>{token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
+$('disconnect').onclick=()=>{forgetPairing();resetConversations(true);token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
+window.addEventListener('pagehide',()=>{rememberConversationWork();resetConversations();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
