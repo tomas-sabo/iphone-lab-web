@@ -13,3 +13,5 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 #tinder-overall-count{font-size:20px;font-weight:700;line-height:1.5}
 
 .decision-buttons{flex-wrap:wrap}.decision-buttons button{flex:1 1 130px;width:auto}.request>.secondary{margin-top:16px}
+
+.request-group{margin-top:28px}.request-group>h2{margin-bottom:4px}.group-count,.group-empty{color:var(--muted,#63746a);font-size:.9rem}.group-count{margin:0 0 14px}.request .request-title{font-size:1.2rem;margin:12px 0}.request h4{font-size:1rem;margin-bottom:8px}
