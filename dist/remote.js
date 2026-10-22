@@ -1,5 +1,11 @@
 (() => {
   const key='iphone-lab-macbook-id';
+  const toggle=document.getElementById('remote-toggle');
+  const body=document.getElementById('remote-body');
+  function collapse(closed){body.hidden=closed;toggle.setAttribute('aria-expanded',String(!closed));toggle.textContent=closed?'Rozbaliť ⌄':'Zbaliť ⌃'}
+  try{collapse(localStorage.getItem('iphone-lab-macbook-collapsed')!=='false')}catch{collapse(true)}
+  toggle.addEventListener('click',()=>{collapse(!body.hidden);try{localStorage.setItem('iphone-lab-macbook-collapsed',String(body.hidden))}catch{}});
+
   const form=document.getElementById('remote-form');
   const input=document.getElementById('remote-id');
   const link=document.getElementById('remote-open');
