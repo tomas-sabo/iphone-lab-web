@@ -3,7 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
-let whatsappNames=[],whatsappUnassigned=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
+let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 const drafts=new Map(),groupOpen=new Map();
 let lastApiCall=0,lastRefresh=0;
 const RATE_KEY='iphone-lab-github-pause-until';
@@ -31,7 +31,7 @@ async function api(path,options={}){
  const remaining=response.headers?.get('X-RateLimit-Remaining'),reset=Number(response.headers?.get('X-RateLimit-Reset')||0)*1000,retry=Number(response.headers?.get('Retry-After')||0)*1000;
  if(remaining!==null&&remaining!==undefined&&Number(remaining)<20)pauseUntil(Math.max(Date.now()+60000,reset+5000));
  if(!response.ok){
-  if(response.status===401){forgetPairing();token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
+  if(response.status===401){forgetPairing();token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
   if([403,429].includes(response.status)){
    const until=Math.max(Date.now()+Math.max(retry,60000),remaining==='0'?reset+5000:0);pauseUntil(until);
    throw Error(`GitHub dočasne odmietol požiadavku. Ďalší pokus po ${new Date(until).toLocaleTimeString('sk-SK')}. Párovanie zostáva uložené.`);
@@ -58,16 +58,16 @@ function render(){
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
    const list=element('ul',undefined,'contact-list');
-   for(const name of whatsappNames.filter(name=>!whatsappUnassigned.includes(name)))list.append(element('li',name));
+   for(const name of whatsappNames.filter(name=>!whatsappUnassigned.includes(name)&&!whatsappManual.includes(name)))list.append(contactEntry(name));
    group.append(list);
    const unassigned=element('details',undefined,'unassigned-contacts');
    unassigned.open=groupOpen.get('whatsapp-unassigned')||false;
-   const toggle=element('summary',`Nepriradení (${whatsappUnassigned.length})`);
+   const toggle=element('summary',`Nepriradení (${whatsappUnassigned.filter(name=>!whatsappManual.includes(name)).length})`);
    toggle.onclick=()=>groupOpen.set('whatsapp-unassigned',!unassigned.open);
    const pendingList=element('ul',undefined,'contact-list');
-   for(const name of whatsappUnassigned)pendingList.append(element('li',name));
+   for(const name of whatsappUnassigned.filter(name=>!whatsappManual.includes(name)))pendingList.append(contactEntry(name));
    unassigned.append(toggle,pendingList);
-   if(!whatsappUnassigned.length)unassigned.append(element('p','Žiadne nepriradené kontakty.','group-empty'));
+   if(!whatsappUnassigned.some(name=>!whatsappManual.includes(name)))unassigned.append(element('p','Žiadne nepriradené kontakty.','group-empty'));
    group.append(unassigned,element('p',whatsappListStatus,'group-empty'));
   }
   if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
@@ -96,23 +96,67 @@ function render(){
    group.append(card);
   }
  }
+
+ const manual=element('details',undefined,'request-group manual-contacts');manual.open=groupOpen.get('manual-contacts')||false;
+ const title=element('summary',`Manuálne (${whatsappManual.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
+ const list=element('ul',undefined,'contact-list');for(const name of whatsappManual)list.append(contactEntry(name));
+ manual.append(title,list);if(!whatsappManual.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
+ $('requests').append(manual);
 }
 let progressLoading=null;
+function validateContacts(data){
+ if(data.schema_version!==1||!Array.isArray(data.names)||data.names.length>2000||!data.names.every(name=>typeof name==='string'&&name.length<=160&&name.trim().length>0&&!/[\u0000-\u001f]/.test(name))||new Set(data.names).size!==data.names.length)throw Error('Invalid contact list');
+ const assigned=data.paired_names,unassigned=data.unpaired_names;
+ if(assigned!==undefined||unassigned!==undefined){
+  if(!Array.isArray(assigned)||!Array.isArray(unassigned))throw Error('Invalid contact groups');
+  const combined=[...assigned,...unassigned];
+  if(combined.length!==data.names.length||new Set(combined).size!==combined.length||!combined.every(name=>data.names.includes(name)))throw Error('Invalid contact groups');
+ }
+ const manual=data.manual_names||[];
+ if(!Array.isArray(manual)||new Set(manual).size!==manual.length||!manual.every(name=>data.names.includes(name)))throw Error('Invalid manual contacts');
+ return data;
+}
+function applyContacts(data){whatsappNames=data.names;whatsappUnassigned=data.unpaired_names===undefined?[...data.names]:data.unpaired_names;whatsappManual=data.manual_names||[];whatsappListStatus='Uložené WhatsApp kontakty.'}
 async function loadWhatsAppNames(){
- try{
-  const file=await api('/contents/operator/whatsapp-contacts.json?ref=main'),data=decode(file.content);
-  if(data.schema_version!==1||!Array.isArray(data.names)||data.names.length>2000||!data.names.every(name=>typeof name==='string'&&name.length<=160&&name.trim().length>0&&!/[\u0000-\u001f]/.test(name))||new Set(data.names).size!==data.names.length)throw Error('Invalid contact list');
-  const assigned=data.paired_names,unassigned=data.unpaired_names;
-  if(assigned!==undefined||unassigned!==undefined){
-   if(!Array.isArray(assigned)||!Array.isArray(unassigned))throw Error('Invalid contact groups');
-   const combined=[...assigned,...unassigned];
-   if(combined.length!==data.names.length||new Set(combined).size!==combined.length||!combined.every(name=>data.names.includes(name)))throw Error('Invalid contact groups');
-  }
-  whatsappUnassigned=unassigned===undefined?[...data.names]:unassigned;
-  whatsappNames=data.names;whatsappListStatus='Uložené WhatsApp kontakty.';
- }catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
+ try{const file=await api('/contents/operator/whatsapp-contacts.json?ref=main');applyContacts(validateContacts(decode(file.content)))}
+ catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
  render();
 }
+let selectedManualContact=null;
+function showManualChoice(name){
+ if(working||!token||!whatsappNames.includes(name)||$('manual-dialog').open)return;
+ selectedManualContact=name;$('manual-contact-name').textContent=name;$('manual-dialog').showModal();
+}
+function contactEntry(name){
+ const row=element('li'),button=element('button',name,'contact-name');button.type='button';button.disabled=working;
+ button.setAttribute?.('aria-label',`${name} — podržať pre voľbu Manuálne`);
+ let hold=null,start=null;
+ const cancel=()=>{if(hold!==null)clearTimeout(hold);hold=null;start=null};
+ button.onpointerdown=e=>{if(e.button!==undefined&&e.button!==0)return;cancel();start=[e.clientX,e.clientY];hold=setTimeout(()=>{hold=null;showManualChoice(name)},600)};
+ button.onpointermove=e=>{if(start&&Math.hypot(e.clientX-start[0],e.clientY-start[1])>10)cancel()};
+ button.onpointerup=cancel;button.onpointercancel=cancel;button.onpointerleave=cancel;
+ button.oncontextmenu=e=>{e.preventDefault();cancel();showManualChoice(name)};
+ button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showManualChoice(name)}};
+ row.append(button);return row;
+}
+async function saveManualChoice(manual){
+ const name=selectedManualContact;$('manual-dialog').close();selectedManualContact=null;
+ if(working||!token||!name)return;
+ working=true;render();
+ try{
+  const file=await api('/contents/operator/whatsapp-contacts.json?ref=main'),data=validateContacts(decode(file.content));
+  if(!data.names.includes(name))throw Error('Kontakt sa zmenil. Obnov zoznam.');
+  const names=new Set(data.manual_names||[]);const before=names.has(name);manual?names.add(name):names.delete(name);
+  if(before!==manual){data.manual_names=data.names.filter(n=>names.has(n));await api('/contents/operator/whatsapp-contacts.json',{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Set operator manual contact preference',content:encode(data)})})}
+  applyContacts(data);message(manual?'Kontakt je v menu Manuálne.':'Kontakt sa vrátil do pôvodného zoznamu.');
+ }catch(e){message(e.message||'Voľbu sa nepodarilo uložiť. Zopakuj synchronizáciu.')}
+ finally{working=false;render()}
+}
+$('manual-yes').onclick=()=>saveManualChoice(true);
+$('manual-no').onclick=()=>saveManualChoice(false);
+$('manual-close').onclick=()=>{$('manual-dialog').close();selectedManualContact=null};
+$('manual-dialog').oncancel=()=>{selectedManualContact=null};
+
 function loadProgress(){if(!progressLoading)progressLoading=readProgress().finally(()=>{progressLoading=null});return progressLoading}
 async function readProgress(){
  try{
@@ -177,8 +221,8 @@ $('refresh').onclick=async()=>{
  }catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;button.disabled=false;render()}
 };
-$('disconnect').onclick=()=>{forgetPairing();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
-window.addEventListener('pagehide',()=>{token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
+$('disconnect').onclick=()=>{forgetPairing();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
+window.addEventListener('pagehide',()=>{token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
