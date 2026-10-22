@@ -1,5 +1,5 @@
 // Bump RELEASE with every deployment that changes application files.
-const RELEASE='1.1.0';
+const RELEASE='1.2.0';
 const CACHE='iphone-lab-'+RELEASE;
 const ROOT=new URL('./',self.location.href);
 const FILES=['./','./index.html','./style.css','./app.js','./bridge.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png'].map(p=>new URL(p,ROOT).href);
