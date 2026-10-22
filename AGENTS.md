@@ -12,3 +12,5 @@ For each app change:
 5. The phone's Aktualizovať button explicitly downloads and checks the complete bundle before switching the active snapshot. It never changes localStorage or sends the bridge token to the update source.
 
 The GitHub Actions workflow only triggers on dist/sw.js or workflow changes (or manual dispatch), so ordinary app releases bypass Actions. First deployment of this engine is version 1.9.0 and must pass through Pages once. If the engine protocol changes later, migrate it through Pages separately and maintain backwards compatibility.
+
+The release packager versions all asset URLs in index.html with app_release=VERSION. Preserve this: WebKit can otherwise reuse older script responses even after the active service-worker cache has switched.

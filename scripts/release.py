@@ -9,6 +9,10 @@ def build(version):
  if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)',version):raise ValueError('Use a semantic release version')
  app=(ROOT/'dist/app.js').read_text();html=(ROOT/'dist/index.html').read_text()
  if "const VERSION='"+version+"';" not in app or 'Verzia '+version+'<' not in html:raise ValueError('Update app.js and index.html version first')
+ # Unique asset URLs prevent WebKit from reusing scripts from an older release.
+ asset_names='|'.join(re.escape(name) for name in FILES if name!='index.html')
+ html=re.sub(r'((?:src|href)=["\']\./(?:'+asset_names+r'))(?:\?[^"\']*)?(["\'])',lambda m:m[1]+'?app_release='+version+m[2],html)
+ (ROOT/'dist/index.html').write_text(html)
  files=[]
  for name in FILES:
   data=(ROOT/'dist'/name).read_bytes();files.append({'path':name,'sha256':hashlib.sha256(data).hexdigest(),'content':base64.b64encode(data).decode()})
