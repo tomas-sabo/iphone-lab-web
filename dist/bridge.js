@@ -2,6 +2,12 @@ const REPO='tomas-sabo/bridge',PREFIX='operator/requests';
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
+const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
+function forgetPairing(){try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
+function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
+function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
+
 const encoder=new TextEncoder();
 export function canonical(v){if(v===null||typeof v!=='object')return JSON.stringify(v);if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}'}
 export async function hash(v){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(canonical(v))))).map(v=>v.toString(16).padStart(2,'0')).join('')}
@@ -9,13 +15,32 @@ const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export async function validate(record,id){const r=record?.request;if(record?.schema_version!==1||!r||!UUID.test(r.id)||r.id!==id||!['rafi','tinder','robota'].includes(r.source))throw Error('Neplatná požiadavka.');for(const [k,n] of [['title',160],['body',6000],['proposed_action',3000],['context_ref',200]])if(typeof r[k]!=='string'||!r[k].trim()||r[k].length>n)throw Error('Neplatný obsah požiadavky.');const created=Date.parse(r.created_at),expires=Date.parse(r.expires_at);if(!Number.isFinite(created)||!Number.isFinite(expires)||created>=expires||expires-created>7*86400000||!/^[a-f0-9]{64}$/.test(r.context_sha256)||await hash(r)!==record.request_digest)throw Error('Kontrola požiadavky zlyhala.');const d=record.decision;if(d!==null){if(!d||!['approved','rejected'].includes(d.outcome)||d.operator!=='Tomy'||d.request_digest!==record.request_digest||!Number.isFinite(Date.parse(d.decided_at))||Date.parse(d.decided_at)<created||Date.parse(d.decided_at)>expires)throw Error('Neplatné rozhodnutie.')}return record}
 function encode(v){let b='';for(const byte of encoder.encode(JSON.stringify(v)))b+=String.fromCharCode(byte);return btoa(b)}
 function decode(v){return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(v.replace(/\s/g,'')),c=>c.charCodeAt(0))))}
-async function api(path,options={}){const response=await fetch(API+path,{...options,redirect:'error',cache:'no-store',headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(options.body?{'Content-Type':'application/json'}:{})},signal:AbortSignal.timeout(20000)});if(!response.ok){if([401,403].includes(response.status)){token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}if([409,422].includes(response.status))throw Error('Požiadavka sa zmenila alebo už bola vybavená. Obnov zoznam.');throw Error(`Bridge nie je dostupný (HTTP ${response.status}).`)}return response.json()}
+async function api(path,options={}){const response=await fetch(API+path,{...options,redirect:'error',cache:'no-store',headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(options.body?{'Content-Type':'application/json'}:{})},signal:AbortSignal.timeout(20000)});if(!response.ok){if(response.status===401){forgetPairing();token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}if([409,422].includes(response.status))throw Error('Požiadavka sa zmenila alebo už bola vybavená. Obnov zoznam.');throw Error(`Bridge nie je dostupný (HTTP ${response.status}).`)}return response.json()}
 function message(text){$('bridge-status').textContent=text}
 function element(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
 function render(){$('requests').replaceChildren();for(const item of items){const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at);const card=element('article',undefined,'request');card.append(element('span',({rafi:'Rafi',tinder:'Tinder',robota:'Robota'})[r.source],'source'),element('h2',r.title),element('p',r.body,'context'),element('h3','Čo schvaľuješ'),element('p',r.proposed_action,'action'),element('small',`Referencia: ${r.context_ref} · Platí do ${new Date(r.expires_at).toLocaleString('sk-SK')}`));if(d)card.append(element('p',d.outcome==='approved'?'Schválené ✓':'Zamietnuté','decision'));else if(expired)card.append(element('p','Platnosť vypršala. Vyžiadaj novú požiadavku.'));else{const controls=element('div',undefined,'decision-buttons');for(const [outcome,label] of [['approved','Schváliť'],['rejected','Zamietnuť']]){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working;b.onclick=()=>decide(item,outcome);controls.append(b)}card.append(controls)}$('requests').append(card)}}
 async function refresh(){const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}items=next.sort((a,b)=>a.record.request.created_at.localeCompare(b.record.request.created_at));render();message(items.length?`Načítané požiadavky: ${items.length}.`:'Žiadne požiadavky.');}
 async function decide(item,outcome){if(working||!token)return;if(!confirm(`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest};await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;render();message('Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.')}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
-$('connect').onsubmit=async e=>{e.preventDefault();if(working)return;working=true;token=$('bridge-token').value.trim();$('bridge-token').value='';$('connect-button').disabled=true;try{const repo=await api('');if(repo.private!==true||repo.full_name!==REPO)throw Error('Bridge musí byť súkromný repozitár.');await refresh();$('connect').hidden=true;$('disconnect').hidden=false}catch(e){token='';items=[];render();message(e.message||'Pripojenie zlyhalo.')}finally{working=false;$('connect-button').disabled=false;render()}};
+async function connectBridge(candidate){
+ if(working||!candidate)return;
+ working=true;token=candidate;$('connect-button').disabled=true;
+ let verified=false;
+ try{
+  const repo=await api('');
+  if(repo.private!==true||repo.full_name!==REPO){forgetPairing();throw Error('Bridge musí byť súkromný repozitár.')}
+  verified=true;const remembered=rememberPairing();connected();
+  await refresh();
+  if(!remembered)message('Pripojené, ale zariadenie nedovolilo uložiť párovanie. Po zatvorení sa bude treba pripojiť znova.');
+ }catch(e){
+  if(!verified){token='';items=[];$('connect').hidden=false;$('disconnect').hidden=true;render()}
+  message(e.message||'Pripojenie zlyhalo.');
+ }finally{working=false;$('connect-button').disabled=false;render()}
+}
+$('connect').onsubmit=async e=>{e.preventDefault();const candidate=$('bridge-token').value.trim();$('bridge-token').value='';await connectBridge(candidate)};
 $('refresh').onclick=async()=>{if(working)return;if(!token){message('Najprv pripoj súkromný bridge.');return}working=true;$('refresh').disabled=true;try{await refresh()}catch(e){message(e.message||'Obnovenie zlyhalo.')}finally{working=false;$('refresh').disabled=false;render()}};
-$('disconnect').onclick=()=>{token='';items=[];render();$('connect').hidden=false;$('disconnect').hidden=true;message('Bridge je odpojený.')};
+$('disconnect').onclick=()=>{forgetPairing();token='';items=[];render();$('connect').hidden=false;$('disconnect').hidden=true;message('Párovanie je odstránené z tohto zariadenia.')};
 window.addEventListener('pagehide',()=>{token='';items=[];render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
+
+function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
+window.addEventListener('pageshow',restorePairing);
+restorePairing();

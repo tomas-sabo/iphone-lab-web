@@ -1,4 +1,4 @@
-const VERSION='1.3.0';
+const VERSION='1.3.1';
 const button=document.getElementById('update');
 const status=document.getElementById('status');
 document.getElementById('version').textContent=`Verzia ${VERSION}`;

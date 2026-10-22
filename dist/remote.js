@@ -4,9 +4,10 @@
   const input=document.getElementById('remote-id');
   const link=document.getElementById('remote-open');
   const status=document.getElementById('remote-status');
+  const forget=document.getElementById('remote-forget');
   function render(id){
     input.value=id;
-    link.hidden=!id;
+    link.hidden=!id;forget.hidden=!id;
     if(id)link.href='rustdesk://connection/new/'+id;
     else link.removeAttribute('href');
   }
@@ -19,5 +20,6 @@
     try{localStorage.setItem(key,id);status.textContent='MacBook je uložený. Otvorenie pokračuje v aplikácii RustDesk.'}
     catch{status.textContent='ID je pripravené iba na toto otvorenie aplikácie.'}
   });
+  forget.addEventListener('click',()=>{try{localStorage.removeItem(key)}catch{}render('');status.textContent='MacBook bol odstránený z tohto zariadenia.'});
   link.addEventListener('click',()=>{status.textContent='Otváram RustDesk. Ak sa neotvorí, nainštaluj ho na iPhone a zadaj rovnaké ID priamo v ňom.'});
 })();
