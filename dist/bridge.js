@@ -52,6 +52,10 @@ async function loadProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');const p=decode(file.content);
   if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');
+  if(Number.isSafeInteger(p.overall_total)&&Number.isSafeInteger(p.overall_sent)&&p.overall_sent>=0&&p.overall_sent<=p.overall_total&&p.overall_total<=100000){
+   $('tinder-overall-count').textContent=`${p.overall_sent} / ${p.overall_total} zhôd dostalo aspoň 1 správu od Rafiho`;
+   $('tinder-overall-meter').max=p.overall_total||1;$('tinder-overall-meter').value=p.overall_sent;
+  }else $('tinder-overall-count').textContent='Celkový údaj zatiaľ nie je dostupný.';
   $('tinder-count').textContent=`Odoslané ${p.sent} / ${p.total} kontaktov`;
   $('tinder-meter').max=p.total||1;$('tinder-meter').value=p.sent;
   $('tinder-detail').textContent=`Čaká na tvoje vyjadrenie: ${p.blocked} · Pripravené: ${p.ready} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')}`;
@@ -90,7 +94,7 @@ $('refresh').onclick=async()=>{
  }catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;button.disabled=false;render()}
 };
-$('disconnect').onclick=()=>{forgetPairing();token='';items=[];lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
+$('disconnect').onclick=()=>{forgetPairing();token='';items=[];lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
 window.addEventListener('pagehide',()=>{token='';items=[];lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
