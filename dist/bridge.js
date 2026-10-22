@@ -43,12 +43,42 @@ async function api(path,options={}){
 function message(text){$('bridge-status').textContent=text}
 function element(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
 function syncBadge(){const count=[...drafts.values()].filter(v=>v.trim()).length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
-function render(){syncBadge();$('requests').replaceChildren();for(const [source,name] of SOURCES){const group=element('section',undefined,'request-group');const matches=items.filter(item=>item.record.request.source===source);const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;group.append(element('h2',name),element('p',`${pending} čaká na odpoveď · ${matches.length} celkom`,'group-count'));if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));$('requests').append(group);for(const item of matches){const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at);const card=element('article',undefined,'request');card.append(element('span',name,'source'),element('h3',r.title,'request-title'),element('p',r.body,'context'),element('h4','Čo schvaľuješ'),element('p',r.proposed_action,'action'),element('small',`Referencia: ${r.context_ref} · Platí do ${new Date(r.expires_at).toLocaleString('sk-SK')}`));if(d){card.append(element('p',d.revoked_at?'Trvalé povolenie odvolané':d.permission==='always'?'Povolené trvalo':({approved:'Schválené ✓',rejected:'Zamietnuté',commented:'Vyjadrenie odoslané'})[d.outcome],'decision'));if(d.outcome==='commented')card.append(element('p',d.comment,'context'));if(d.permission==='always'&&!d.revoked_at){const revoke=element('button','Odvolať trvalé povolenie','secondary');revoke.type='button';revoke.disabled=working;revoke.onclick=()=>revokePermission(item);card.append(revoke)}}else if(expired)card.append(element('p','Platnosť vypršala. Vyžiadaj novú požiadavku.'));else{const controls=element('div',undefined,'decision-buttons');for(const [outcome,label,permission] of (r.kind==='work_file'?[['approved','Povoliť raz','once'],['approved','Povoliť trvalo','always'],['rejected','Zakázať']]:[['approved','Schváliť'],['rejected','Zamietnuť']])){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working;b.onclick=()=>decide(item,outcome,'',permission);controls.append(b)}card.append(controls);
- const label=element('label','Tvoje vyjadrenie');label.htmlFor='comment-'+r.id;
- const input=element('textarea');input.id=label.htmlFor;input.rows=3;input.maxLength=3000;input.placeholder='Napíš odpoveď alebo doplnenie…';input.value=drafts.get(r.id)||'';input.disabled=working;input.oninput=()=>{drafts.set(r.id,input.value);syncBadge()};
- const send=element('button','Odoslať vyjadrenie','secondary');send.type='button';send.disabled=working;send.onclick=()=>decide(item,'commented',input.value);
- const box=element('div',undefined,'comment-box');box.append(label,input,send,element('small','Vyjadrenie odošle odpoveď zdroju. Neznamená schválenie akcie.'));card.append(box);
- }group.append(card)}}}
+function render(){
+ syncBadge();$('requests').replaceChildren();
+ for(const [source,name] of SOURCES){
+  const group=element('details',undefined,'request-group');
+  const matches=items.filter(item=>item.record.request.source===source);
+  const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
+  const heading=element('summary',name,'group-heading');
+  heading.append(element('span',`${pending}/${matches.length}`,'group-count'));
+  group.append(heading);
+  if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
+  $('requests').append(group);
+  for(const item of matches){
+   const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at),done=Boolean(d)||expired;
+   const card=element(done?'details':'article',undefined,done?'request request-done':'request');
+   if(done)card.append(element('summary',r.title,'request-title'));
+   card.append(element('span',name,'source'));
+   if(!done)card.append(element('h3',r.title,'request-title'));
+   card.append(element('p',r.body,'context'),element('h4','Čo schvaľuješ'),element('p',r.proposed_action,'action'),element('small',`Referencia: ${r.context_ref} · Platí do ${new Date(r.expires_at).toLocaleString('sk-SK')}`));
+   if(d){
+    card.append(element('p',d.revoked_at?'Trvalé povolenie odvolané':d.permission==='always'?'Povolené trvalo':({approved:'Schválené ✓',rejected:'Zamietnuté',commented:'Vyjadrenie odoslané'})[d.outcome],'decision'));
+    if(d.outcome==='commented')card.append(element('p',d.comment,'context'));
+    if(d.permission==='always'&&!d.revoked_at){const revoke=element('button','Odvolať trvalé povolenie','secondary');revoke.type='button';revoke.disabled=working;revoke.onclick=()=>revokePermission(item);card.append(revoke)}
+   }else if(expired)card.append(element('p','Platnosť vypršala. Vyžiadaj novú požiadavku.'));
+   else{
+    const controls=element('div',undefined,'decision-buttons');
+    for(const [outcome,label,permission] of (r.kind==='work_file'?[['approved','Povoliť raz','once'],['approved','Povoliť trvalo','always'],['rejected','Zakázať']]:[['approved','Schváliť'],['rejected','Zamietnuť']])){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working;b.onclick=()=>decide(item,outcome,'',permission);controls.append(b)}
+    card.append(controls);
+    const label=element('label','Tvoje vyjadrenie');label.htmlFor='comment-'+r.id;
+    const input=element('textarea');input.id=label.htmlFor;input.rows=3;input.maxLength=3000;input.placeholder='Napíš odpoveď alebo doplnenie…';input.value=drafts.get(r.id)||'';input.disabled=working;input.oninput=()=>{drafts.set(r.id,input.value);syncBadge()};
+    const send=element('button','Odoslať vyjadrenie','secondary');send.type='button';send.disabled=working;send.onclick=()=>decide(item,'commented',input.value);
+    const box=element('div',undefined,'comment-box');box.append(label,input,send,element('small','Vyjadrenie odošle odpoveď zdroju. Neznamená schválenie akcie.'));card.append(box);
+   }
+   group.append(card);
+  }
+ }
+}
 async function loadProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');const p=decode(file.content);
