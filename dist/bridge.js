@@ -92,8 +92,8 @@ let progressLoading=null;
 async function loadWhatsAppNames(){
  try{
   const file=await api('/contents/operator/whatsapp-contacts.json?ref=main'),data=decode(file.content);
-  if(data.schema_version!==1||!Array.isArray(data.names)||data.names.length>2000||!data.names.every(name=>typeof name==='string'&&name.length<=160&&/\sT$/.test(name)&&!/[\u0000-\u001f]/.test(name))||new Set(data.names).size!==data.names.length)throw Error('Invalid contact list');
-  whatsappNames=data.names;whatsappListStatus='Uložené WhatsApp mená s koncovým T.';
+  if(data.schema_version!==1||!Array.isArray(data.names)||data.names.length>2000||!data.names.every(name=>typeof name==='string'&&name.length<=160&&name.trim().length>0&&!/[\u0000-\u001f]/.test(name))||new Set(data.names).size!==data.names.length)throw Error('Invalid contact list');
+  whatsappNames=data.names;whatsappListStatus='Uložené WhatsApp kontakty.';
  }catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
  render();
 }
