@@ -79,17 +79,20 @@ function render(){
   }
  }
 }
-async function loadProgress(){
+let progressLoading=null;
+function loadProgress(){if(!progressLoading)progressLoading=readProgress().finally(()=>{progressLoading=null});return progressLoading}
+async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');const p=decode(file.content);
   if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');
   if(Number.isSafeInteger(p.overall_total)&&Number.isSafeInteger(p.overall_sent)&&p.overall_sent>=0&&p.overall_sent<=p.overall_total&&p.overall_total<=100000){
-   $('tinder-overall-count').textContent=`${p.overall_sent} / ${p.overall_total} zhôd dostalo aspoň 1 správu od Rafiho`;
+   $('tinder-overall-count').textContent=`Tinder odoslal ${Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=p.overall_sent?p.messages_sent_overall:p.overall_sent} správ · ${p.overall_sent} / ${p.overall_total} zhôd`;
    $('tinder-overall-meter').max=p.overall_total||1;$('tinder-overall-meter').value=p.overall_sent;
   }else $('tinder-overall-count').textContent='Celkový údaj zatiaľ nie je dostupný.';
-  $('tinder-count').textContent=`Odoslané ${p.sent} / ${p.total} kontaktov`;
-  $('tinder-meter').max=p.total||1;$('tinder-meter').value=p.sent;
-  $('tinder-detail').textContent=`Čaká na tvoje vyjadrenie: ${p.blocked} · Pripravené: ${p.ready} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`;
+  const prepared=Number.isSafeInteger(p.rafi_prepared)&&p.rafi_prepared>=0&&p.rafi_prepared<=p.total?p.rafi_prepared:null;
+  $('tinder-count').textContent=prepared===null?'Údaj o pripravených odpovediach zatiaľ nie je dostupný.':`Rafi pripravil ${prepared} / ${p.total} odpovedí`;
+  $('tinder-meter').max=p.total||1;$('tinder-meter').value=prepared||0;
+  $('tinder-detail').textContent=`Tinder odoslal v sérii: ${p.sent} · Čaká na tvoje vyjadrenie: ${p.blocked} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`;
   $('tinder-eta').textContent=p.phase==='complete'?'Séria je dokončená.':p.phase==='paused'?'Odosielanie je pozastavené.':p.phase==='awaiting_operator'?'Odhad dokončenia: čaká na tvoje odpovede.':p.phase==='attention'?'Pokračovanie potrebuje kontrolu.':Number.isFinite(p.eta_seconds)&&p.eta_seconds>=0?`Odhad zostávajúceho času: približne ${Math.max(1,Math.ceil(p.eta_seconds/60))} min.`:'Odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
  }catch{$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Zobrazené počty môžu byť staršie.';$('tinder-eta').textContent='Skontroluj pripojenie a zopakuj synchronizáciu.'}
 }
@@ -144,3 +147,8 @@ window.addEventListener('pagehide',()=>{token='';items=[];lastRefresh=0;render()
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
 restorePairing();
+
+// Only aggregate progress polls automatically. Requests and decisions stay manual.
+function pollProgress(){if(token&&!working&&document.visibilityState!=='hidden'&&Date.now()>=readPause())return loadProgress()}
+setInterval(pollProgress,15000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='hidden')pollProgress()});
