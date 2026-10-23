@@ -105,6 +105,76 @@ function render(){
  $('requests').append(manual);
 }
 let progressLoading=null;
+let statisticsManifest=null,statisticsData=null,statisticsLoading=false,statisticsMonth='',statisticsMetric='totalMD';
+function resetStatistics(){resetOriginalStatistics();statisticsManifest=null;statisticsData=null;$('statistics-body').replaceChildren();$('statistics-status').textContent='Pripoj bridge na načítanie súkromného reportu.'}
+const SHA256=/^[a-f0-9]{64}$/;
+function statisticsPointer(data){
+ if(data.schema_version!==1||!SHA256.test(data.source_sha256)||!/^\d{4}-\d{2}-\d{2}$/.test(data.start)||!/^\d{4}-\d{2}-\d{2}$/.test(data.end)||data.start>data.end||!Number.isFinite(Date.parse(data.fetched_at))||!data.files||!data.files['overview.json']||Object.keys(data.files).length>64)throw Error('Neplatný manifest štatistiky.');
+ for(const [name,file] of Object.entries(data.files))if(!/^(overview|p\d{2})\.json$/.test(name)||!SHA256.test(file.sha256)||!Number.isSafeInteger(file.bytes)||file.bytes<=0||file.bytes>900000)throw Error('Neplatná časť štatistiky.');
+ return data;
+}
+async function readStatisticsPart(manifest,name){
+ const expected=manifest.files[name];if(!expected)throw Error('Chýba časť reportu.');
+ const file=await api(`/contents/operator/statistics/reports/${manifest.source_sha256}/${name}?ref=main`);
+ if(typeof file.content!=='string'||file.content.length>1300000||file.size!==undefined&&file.size!==expected.bytes)throw Error('Neplatná veľkosť reportu.');
+ const bytes=Uint8Array.from(atob(file.content.replace(/\s/g,'')),c=>c.charCodeAt(0));
+ const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+ if(bytes.length!==expected.bytes||actual!==expected.sha256)throw Error('Kontrola integrity reportu zlyhala.');
+ const data=JSON.parse(new TextDecoder().decode(bytes));if(data.schema_version!==1||data.source_sha256!==manifest.source_sha256)throw Error('Nesprávna verzia reportu.');return data;
+}
+function validateStatistics(data){
+ const numeric=v=>Number.isFinite(v)&&v>=0&&v<=100000000;
+ if(!Array.isArray(data.people)||!data.people.length||data.people.length>50||!data.counts||data.counts.people!==data.people.length||!Number.isSafeInteger(data.counts.humanPRs)||data.counts.humanPRs<0)throw Error('Neplatné súhrnné dáta.');
+ if(new Set(data.people.map(p=>p.id)).size!==data.people.length)throw Error('Duplicitná identita v reporte.');
+ for(const p of data.people){
+  if(!/^p\d{2}$/.test(p.id)||typeof p.name!=='string'||!p.name.trim()||p.name.length>160||p.jiraIdentityMatched!==true||!['totalMD','prMD','jiraOnlyMD','lowerMD','upperMD'].every(k=>numeric(p[k]))||p.lowerMD>p.totalMD||p.totalMD>p.upperMD||!p.counts||!Number.isSafeInteger(p.counts.prs)||p.counts.prs<0||!Array.isArray(p.months)||p.months.length>24)throw Error('Neplatný riadok reportu.');
+  for(const m of p.months)if(!/^\d{4}-\d{2}$/.test(m.month)||!['totalMD','prMD','jiraOnlyMD','lowerMD','upperMD'].every(k=>numeric(m[k])))throw Error('Neplatný mesačný údaj.');
+ }
+ if(data.people.reduce((sum,p)=>sum+p.counts.prs,0)!==data.counts.humanPRs)throw Error('Počet PR nesúhlasí so súhrnom.');
+ return data;
+}
+function md(value){return Number(value).toLocaleString('sk-SK',{maximumFractionDigits:2})}
+function dateOnly(value){return new Date(value+'T12:00:00Z').toLocaleDateString('sk-SK')}
+function statisticsTable(headings,rows){const wrap=element('div',undefined,'statistics-table');const table=element('table'),head=element('thead'),tr=element('tr');for(const h of headings)tr.append(element('th',h));head.append(tr);table.append(head);const body=element('tbody');for(const values of rows){const row=element('tr');for(const value of values)row.append(element('td',String(value??'—')));body.append(row)}table.append(body);wrap.append(table);return wrap}
+function renderStatistics(){
+ if(!statisticsData)return;const data=statisticsData,body=$('statistics-body');body.replaceChildren();
+ body.append(element('p',`${dateOnly(data.start)} – ${dateOnly(data.end)} · ${data.counts.people} ľudí · ${data.counts.humanPRs} PR`,'statistics-summary'),element('p',`Dáta získané ${new Date(data.fetched_at).toLocaleString('sk-SK')}. Všetky Jira identity sú spárované.`,'hint'),element('p','Odhad pracnosti v MD, nie výkaz odpracovaných hodín. 1 MD = 8 hodín. Rozpätie je scenárový odhad, nie štatistický interval spoľahlivosti.','hint'));
+ const controls=element('div',undefined,'statistics-controls'),monthLabel=element('label','Obdobie odhadu'),month=element('select');month.id='statistics-month';const all=element('option','Celé obdobie');all.value='';month.append(all);
+ const months=[...new Set(data.people.flatMap(p=>p.months.map(m=>m.month)))].sort();for(const name of months){const option=element('option',name);option.value=name;month.append(option)}month.value=months.includes(statisticsMonth)?statisticsMonth:'';statisticsMonth=month.value;month.onchange=()=>{statisticsMonth=month.value;renderStatistics()};monthLabel.append(month);controls.append(monthLabel);
+ const metricLabel=element('label','Porovnanie'),metric=element('select');metric.id='statistics-metric';for(const [key,name] of [['totalMD','Spolu MD'],['prMD','PR MD'],['jiraOnlyMD','Jira bez PR MD']]){const option=element('option',name);option.value=key;metric.append(option)}metric.value=statisticsMetric;metric.onchange=()=>{statisticsMetric=metric.value;renderStatistics()};metricLabel.append(metric);controls.append(metricLabel);body.append(controls);
+ const value=p=>statisticsMonth?p.months.find(m=>m.month===statisticsMonth)?.[statisticsMetric]||0:p[statisticsMetric];const people=[...data.people].sort((a,b)=>value(b)-value(a)||a.name.localeCompare(b.name));const max=Math.max(1,...people.map(value));
+ for(const person of people){
+  const card=element('details',undefined,'statistics-person');card.append(element('summary',`${person.name} · ${md(value(person))} MD`));const meter=element('progress');meter.max=max;meter.value=value(person);meter.setAttribute?.('aria-label',`${person.name}: ${md(value(person))} MD`);card.append(meter,element('p',`Celé obdobie: ${person.counts.prs} PR · ${person.counts.merged??0} merged · ${person.counts.open??0} open · ${person.counts.jira??0} Jira.`, 'hint'),element('p',`Spolu ${md(person.totalMD)} MD · rozpätie ${md(person.lowerMD)} – ${md(person.upperMD)} MD. PR ${md(person.prMD)} MD + Jira bez PR ${md(person.jiraOnlyMD)} MD.`));
+  card.append(statisticsTable(['Mesiac','Spolu MD','PR MD','Jira bez PR MD','Rozpätie MD'],person.months.map(m=>[m.month,md(m.totalMD),md(m.prMD),md(m.jiraOnlyMD),`${md(m.lowerMD)} – ${md(m.upperMD)}`])));
+  const details=element('div'),button=element('button','Načítať detail PR / Jira','secondary');button.type='button';button.onclick=()=>loadStatisticsPerson(person,button,details);card.append(button,details);body.append(card);
+ }
+ const method=element('details',undefined,'statistics-method');method.append(element('summary','Metodika a obmedzenia'));
+ for(const [key,value] of Object.entries(data.methodology||{}))if(typeof value==='string')method.append(element('h4',({unit:'Jednotka',scenario:'Scenár',date:'Priradenie dátumu',inclusion:'Zahrnutie',deduplication:'Odstránenie duplicít',sizing:'Odhad veľkosti',uncertainty:'Neistota',limitations:'Obmedzenia'})[key]||key),element('p',value,'context'));
+ body.append(method);
+}
+async function loadStatisticsPerson(person,button,target){
+ if(!token||!statisticsManifest)return;const manifest=statisticsManifest;button.disabled=true;target.replaceChildren(element('p','Načítavam súkromný detail…'));
+ try{
+  const data=await readStatisticsPart(manifest,person.id+'.json');
+  if(data.id!==person.id||data.name!==person.name||!Array.isArray(data.prs)||!Array.isArray(data.jira)||data.prs.length>5000||data.jira.length>5000)throw Error('Neplatný detail štatistiky.');
+  if(statisticsManifest!==manifest||!token)return;
+  target.replaceChildren();const prs=element('details'),jira=element('details');prs.append(element('summary',`PR (${data.prs.length})`),statisticsTable(['PR','Názov','Dátum','Stav','MD','Zahrnuté'],data.prs.map(p=>[`#${p.number}`,p.title,p.date,p.state,md(p.md||0),p.included?'Áno':'Nie'])));jira.append(element('summary',`Jira (${data.jira.length})`),statisticsTable(['Kľúč','Názov','Stav','Vyriešené','Jira bez PR MD','Zaradenie'],data.jira.map(j=>[j.key,j.title,j.status,j.resolved,md(j.jiraOnlyMD||0),j.decision])));target.append(prs,jira);
+ }catch(e){target.replaceChildren(element('p',e.message||'Detail sa nepodarilo načítať.'))}
+ finally{button.disabled=false}
+}
+async function loadStatistics(){
+ if(statisticsLoading)return;if(!token){$('statistics-status').textContent='Najprv pripoj súkromný bridge.';return}
+ statisticsLoading=true;$('statistics-load').disabled=true;$('statistics-status').textContent='Načítavam súkromnú štatistiku…';
+ try{
+  const file=await api('/contents/operator/statistics/index.json?ref=main');if(typeof file.content!=='string'||file.content.length>64000)throw Error('Neplatná veľkosť manifestu.');
+  const manifest=statisticsPointer(decode(file.content)),data=validateStatistics(await readStatisticsPart(manifest,'overview.json'));
+  if(data.start!==manifest.start||data.end!==manifest.end||data.fetched_at!==manifest.fetched_at)throw Error('Verzie reportu nesúhlasia.');
+  statisticsManifest=manifest;statisticsData=data;renderStatistics();$('statistics-status').textContent=`Súkromný report · načítané ${new Date().toLocaleTimeString('sk-SK')}.`;
+ }catch(e){$('statistics-status').textContent=e.status===404?'Štatistika zatiaľ nie je v súkromnom bridge.':`${e.message||'Report sa nepodarilo načítať.'}${statisticsData?' Zobrazený report je predchádzajúci snapshot.':''}`}
+ finally{statisticsLoading=false;$('statistics-load').disabled=false}
+}
+$('statistics-load').onclick=loadStatistics;
+
 // Private conversation details are fetched only after an explicit contact tap.
 const CONVERSATION_DRAFTS_KEY='iphone-lab-conversation-work-v1';
 let conversationIndex=[],conversationStatus='',activeConversation=null,conversationBusy=false;
@@ -114,7 +184,7 @@ function rememberConversationWork(){
  const data=conversationWork();data[activeConversation.record.id]={text:$('conversation-text').value,notes:$('conversation-notes').value,snapshot_sha256:activeConversation.record.snapshot_sha256};
  try{localStorage.setItem(CONVERSATION_DRAFTS_KEY,JSON.stringify(data))}catch{$('conversation-feedback').textContent='Zariadenie neuložilo pracovný text. Použi Uložiť pracovný text.'}
 }
-function resetConversations(forget=false){conversationIndex=[];activeConversation=null;$('conversation-dialog').close?.();$('conversation-body').replaceChildren();if(forget)try{localStorage.removeItem(CONVERSATION_DRAFTS_KEY)}catch{}}
+function resetConversations(forget=false){resetStatistics();conversationIndex=[];activeConversation=null;$('conversation-dialog').close?.();$('conversation-body').replaceChildren();if(forget)try{localStorage.removeItem(CONVERSATION_DRAFTS_KEY)}catch{}}
 async function loadConversationIndex(){
  try{
   const file=await api('/contents/operator/conversations/index.json?ref=main'),data=decode(file.content);
@@ -314,4 +384,54 @@ document.addEventListener('visibilitychange',async()=>{
  working=true;render();
  try{await refresh()}catch(e){message(e.message||'Požiadavky sa nepodarilo obnoviť.')}
  finally{working=false;render()}
+});
+
+// Original report is fetched only from the paired private repository. It runs
+// in an opaque sandbox with no network, storage, navigation or token access.
+const PAGE_FILES=['index.html','chart.umd.js','people.csv','events.csv','pull-requests.csv','jira.csv','estimates.json'];
+let pageGeneration=0,pageFrame=null,pageURL=null,pageDownloadURL=null,pageManifest=null,pageNonce='';
+async function byteHash(bytes){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function pagePointer(m){
+ if(m?.schema_version!==1||!SHA256.test(m.report_sha256)||!/^\d{4}-\d{2}-\d{2}$/.test(m.start)||!/^\d{4}-\d{2}-\d{2}$/.test(m.end)||m.start>m.end||!Number.isFinite(Date.parse(m.fetched_at))||!m.files||Object.keys(m.files).length!==PAGE_FILES.length)throw Error('Neplatný manifest stránky.');
+ let total=0,chunks=0;const hashes={};
+ for(const name of PAGE_FILES){const f=m.files[name];if(!f||!SHA256.test(f.sha256)||!Number.isSafeInteger(f.bytes)||f.bytes<=0||f.bytes>10000000||!Array.isArray(f.chunks)||!f.chunks.length||f.chunks.length>40)throw Error('Neplatný súbor stránky.');let size=0;for(const c of f.chunks){if(!Number.isSafeInteger(c.bytes)||c.bytes<1||c.bytes>500000||!SHA256.test(c.sha256))throw Error('Neplatná časť stránky.');size+=c.bytes;chunks++}if(size!==f.bytes)throw Error('Neplatná veľkosť stránky.');total+=size;hashes[name]=f.sha256}
+ if(total>20000000||chunks>80||await hash(hashes)!==m.report_sha256)throw Error('Kontrola manifestu stránky zlyhala.');return m;
+}
+async function readPageAsset(m,name){
+ if(!PAGE_FILES.includes(name))throw Error('Nepovolený export.');const f=m.files[name],out=new Uint8Array(f.bytes);let offset=0;
+ for(let i=0;i<f.chunks.length;i++){const c=f.chunks[i],v=await api(`/contents/operator/statistics-page/reports/${m.report_sha256}/${name}.${i}.bin?ref=main`);if(typeof v.content!=='string'||v.content.length>700000||v.size!==undefined&&v.size!==c.bytes)throw Error('Nesprávna veľkosť časti stránky.');const bytes=Uint8Array.from(atob(v.content.replace(/\s/g,'')),x=>x.charCodeAt(0));if(bytes.length!==c.bytes||await byteHash(bytes)!==c.sha256)throw Error('Kontrola integrity stránky zlyhala.');out.set(bytes,offset);offset+=bytes.length}
+ if(await byteHash(out)!==f.sha256)throw Error('Kontrola súboru stránky zlyhala.');return out;
+}
+function resetOriginalStatistics(){
+ pageGeneration++;pageFrame=null;pageManifest=null;pageNonce='';
+ $('statistics-page-frame').replaceChildren();$('statistics-page-dialog').close?.();
+ if(pageURL)URL.revokeObjectURL(pageURL);if(pageDownloadURL)URL.revokeObjectURL(pageDownloadURL);pageURL=pageDownloadURL=null;
+ $('statistics-page-download').hidden=true;$('statistics-open').disabled=false;
+}
+function isolatedReport(html,chart,nonce){
+ const doc=new DOMParser().parseFromString(html,'text/html');let libraries=0;
+ for(const n of doc.querySelectorAll('base,iframe,object,embed,form,meta[http-equiv]'))n.remove();
+ for(const n of doc.querySelectorAll('*'))for(const a of [...n.attributes])if(/^on/i.test(a.name)||['srcset','action','formaction'].includes(a.name))n.removeAttribute(a.name);
+ for(const n of doc.querySelectorAll('[src]')){if(n.tagName==='SCRIPT'&&/^([.]\/)?chart[.]umd[.]js$/.test(n.getAttribute('src'))){n.removeAttribute('src');n.textContent=chart.replace(/<\/script/gi,'<\\/script');libraries++}else n.remove()}
+ if(libraries!==1)throw Error('Report neobsahuje očakávanú knižnicu grafov.');
+ for(const a of doc.querySelectorAll('[href]')){const name=a.getAttribute('href').replace(/^\.\//,'');a.removeAttribute('href');if(PAGE_FILES.slice(2).includes(name)){a.setAttribute('href','#');a.setAttribute('data-private-export',name)}}
+ const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; worker-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'";doc.head.prepend(csp);
+ const bridge=doc.createElement('script');bridge.textContent=`document.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();e.stopImmediatePropagation();const name=a.getAttribute('data-private-export');if(name)parent.postMessage({type:'PRIVATE_REPORT_EXPORT',request_id:${JSON.stringify(nonce)},name},'*')},true);`;doc.head.append(bridge);
+ return '<!doctype html>'+doc.documentElement.outerHTML;
+}
+async function openOriginalStatistics(){
+ if(!token){$('statistics-page-status').textContent='Najprv pripoj bridge.';return}
+ resetOriginalStatistics();const generation=pageGeneration;$('statistics-open').disabled=true;$('statistics-page-status').textContent='Načítavam a overujem pôvodnú stránku…';
+ try{const m=await pagePointer(decode((await api('/contents/operator/statistics-page/index.json?ref=main')).content));const html=await readPageAsset(m,'index.html'),chart=await readPageAsset(m,'chart.umd.js');if(generation!==pageGeneration||!token)return;
+ const nonce=crypto.randomUUID(),safe=isolatedReport(new TextDecoder('utf-8',{fatal:true}).decode(html),new TextDecoder('utf-8',{fatal:true}).decode(chart),nonce);const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.title='Pôvodná štatistika';frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'");frame.srcdoc=safe;pageFrame=frame;pageNonce=nonce;pageManifest=m;$('statistics-page-frame').replaceChildren(frame);$('statistics-page-info').textContent=`Obdobie ${m.start} – ${m.end}`;$('statistics-page-dialog').showModal();$('statistics-page-status').textContent='Pôvodná stránka otvorená. Ide o posledný prenesený report.';
+ }catch(e){if(generation===pageGeneration)$('statistics-page-status').textContent=e.status===404?'Report sa ešte prenáša. Skús otvoriť znova.':e.message}
+ finally{if(generation===pageGeneration)$('statistics-open').disabled=false}
+}
+$('statistics-open').onclick=openOriginalStatistics;
+$('statistics-page-close').onclick=resetOriginalStatistics;
+$('statistics-page-dialog').addEventListener?.('cancel',e=>{e.preventDefault();resetOriginalStatistics()});
+window.addEventListener('message',async e=>{
+ const v=e.data;if(!pageFrame||e.source!==pageFrame.contentWindow||v?.type!=='PRIVATE_REPORT_EXPORT'||v.request_id!==pageNonce||!PAGE_FILES.slice(2).includes(v.name)||!token)return;
+ const generation=pageGeneration;$('statistics-page-info').textContent='Pripravujem export…';
+ try{const bytes=await readPageAsset(pageManifest,v.name);if(generation!==pageGeneration||!token)return;if(pageDownloadURL)URL.revokeObjectURL(pageDownloadURL);pageDownloadURL=URL.createObjectURL(new Blob([bytes],{type:v.name.endsWith('.json')?'application/json':'text/csv;charset=utf-8'}));const a=$('statistics-page-download');a.href=pageDownloadURL;a.download=v.name;a.textContent='Stiahnuť '+v.name;a.hidden=false;$('statistics-page-info').textContent='Export je pripravený v hornej lište.'}catch(err){if(generation===pageGeneration)$('statistics-page-info').textContent=err.message}
 });
