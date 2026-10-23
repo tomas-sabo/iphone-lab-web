@@ -309,17 +309,18 @@ async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');const p=decode(file.content);
   if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');
-  if(Number.isSafeInteger(p.overall_total)&&Number.isSafeInteger(p.overall_sent)&&p.overall_sent>=0&&p.overall_sent<=p.overall_total&&p.overall_total<=100000){
-   $('tinder-overall-count').textContent=`Tinder odoslal ${Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=p.overall_sent?p.messages_sent_overall:p.overall_sent} správ · ${p.overall_sent} / ${p.overall_total} zhôd`;
-   $('tinder-overall-meter').max=p.overall_total||1;$('tinder-overall-meter').value=p.overall_sent;
+  if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0&&Number.isSafeInteger(p.messages_in_resolution)&&p.messages_in_resolution>=0){
+   const tracked=Number.isSafeInteger(p.messages_tracked_for_chart)&&p.messages_tracked_for_chart>=p.messages_sent_overall?p.messages_tracked_for_chart:p.messages_sent_overall+p.messages_in_resolution;
+   $('tinder-overall-count').textContent=`Odoslané celkovo: ${p.messages_sent_overall} · V riešení: ${p.messages_in_resolution}`;
+   $('tinder-overall-meter').max=tracked||1;$('tinder-overall-meter').value=p.messages_sent_overall;
   }else $('tinder-overall-count').textContent='Celkový údaj zatiaľ nie je dostupný.';
   const finish=Date.parse(p.overall_eta_at),remaining=Math.max(0,Math.ceil((finish-Date.now())/60000));
   const duration=remaining>=60?`${Math.floor(remaining/60)} h ${remaining%60} min`:`${Math.max(1,remaining)} min`;
   $('tinder-overall-eta').textContent=p.overall_eta_state==='complete'?'Všetky evidované zhody dostali správu.':p.overall_eta_state==='paused'?'Celkový odhad: odosielanie je pozastavené.':p.overall_eta_state==='awaiting_operator'?'Celkový odhad: čaká na tvoje odpovede.':p.overall_eta_state==='attention'?'Celkový odhad: pokračovanie potrebuje kontrolu.':p.overall_eta_state==='estimated'&&Number.isFinite(finish)&&finish>Date.now()?`Pri aktuálnom tempe približne ${duration} · dokončenie ${new Date(finish).toLocaleString('sk-SK',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'})}.${p.blocked?' Predpokladá vybavenie čakajúcich otázok.':''}`:p.overall_eta_state==='stalled'?'Celkový odhad: čaká na obnovenie tempa odosielania.':'Celkový odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
-  const prepared=Number.isSafeInteger(p.rafi_prepared)&&p.rafi_prepared>=0&&p.rafi_prepared<=p.total?p.rafi_prepared:null;
-  $('tinder-count').textContent=prepared===null?'Údaj o pripravených odpovediach zatiaľ nie je dostupný.':`Rafi pripravil ${prepared} / ${p.total} odpovedí`;
-  $('tinder-meter').max=p.total||1;$('tinder-meter').value=prepared||0;
-  $('tinder-detail').textContent=`Tinder odoslal v sérii: ${p.sent} · Čaká na tvoje vyjadrenie: ${p.blocked} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`;
+  const batchOk=['current_batch_total','current_batch_sent','current_batch_resolved','current_batch_in_resolution'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0)&&p.current_batch_resolved<=p.current_batch_total;
+  $('tinder-count').textContent=batchOk?`Aktuálna várka: ${p.current_batch_resolved} / ${p.current_batch_total} vybavených`:'Údaj o aktuálnej várke zatiaľ nie je dostupný.';
+  $('tinder-meter').max=batchOk?(p.current_batch_total||1):1;$('tinder-meter').value=batchOk?p.current_batch_resolved:0;
+  $('tinder-detail').textContent=batchOk?`Aktuálne v riešení: ${p.current_batch_in_resolution} · Z várky odoslané: ${p.current_batch_sent} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`:'Obnovenie aktuálnej várky zlyhalo.';
   $('tinder-eta').textContent=p.phase==='complete'?'Séria je dokončená.':p.phase==='paused'?'Odosielanie je pozastavené.':p.phase==='awaiting_operator'?'Odhad dokončenia: čaká na tvoje odpovede.':p.phase==='attention'?'Pokračovanie potrebuje kontrolu.':Number.isFinite(p.eta_seconds)&&p.eta_seconds>=0?`Odhad zostávajúceho času: približne ${Math.max(1,Math.ceil(p.eta_seconds/60))} min.`:'Odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
  }catch{$('tinder-overall-eta').textContent='Celkový odhad nie je dostupný — údaje sa neobnovili.';$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Zobrazené počty môžu byť staršie.';$('tinder-eta').textContent='Skontroluj pripojenie a zopakuj synchronizáciu.'}
 }
