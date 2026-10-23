@@ -462,6 +462,7 @@ function originalPeriodRuntime(){
   try{const next=filterReportPeriod(full,from.value,to.value);Object.assign(report,next);chart.options.scales.x.min=timestamp(next.start);chart.options.scales.x.max=timestamp(next.end)+(next.start===next.end?86400000:0);chart.options.scales.x.title.text='Dátum ('+next.start+' – '+next.end+')';
    const stats=document.querySelectorAll('.stats strong'),labels=document.querySelectorAll('.stats span');stats[0].textContent=next.people.length;stats[1].textContent=next.counts.humanPRs;stats[2].textContent=next.counts.uniqueJira;labels[2].textContent='jedinečné Jira vytvorené vo vybranom období';
    const time=document.querySelector('header time');if(time)time.textContent=next.start+' — '+next.end;
+   const coverage=[...document.querySelectorAll('.notes p')].find(p=>p.textContent.startsWith('Pokrytie:'));if(coverage){const text=coverage.textContent,at=text.indexOf(' v rovnakych');if(at>=0)coverage.textContent='Pokrytie: ľudské PR vytvorené od '+next.start+' do '+next.end+text.slice(at)}
    const intro=document.querySelector('header p');if(intro)intro.textContent='Kumulatívne MD za vybrané obdobie / rovnaký model pre každého / 1 MD = 8 h';
    update();status.textContent='Zobrazené '+next.start+' – '+next.end+'. Exporty obsahujú pôvodný úplný report.';
    document.body.dataset.periodStart=next.start;document.body.dataset.periodEnd=next.end;
