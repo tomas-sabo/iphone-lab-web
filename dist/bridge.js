@@ -417,7 +417,7 @@ function isolatedReport(html,chart,nonce){
  if(libraries!==1)throw Error('Report neobsahuje očakávanú knižnicu grafov.');
  for(const a of doc.querySelectorAll('[href]')){const name=a.getAttribute('href').replace(/^\.\//,'');a.removeAttribute('href');if(PAGE_FILES.slice(2).includes(name)){a.setAttribute('href','#');a.setAttribute('data-private-export',name)}}
  for(const style of doc.querySelectorAll('style'))style.textContent=style.textContent.replace(/@media\s*\(max-width:\s*700px\)/g,'@media(max-width:0px)');
- const periodStyle=doc.createElement('style');periodStyle.textContent='#report-period{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 0;font:15px system-ui}#report-period label{display:flex;align-items:center;gap:8px}#report-period input,#report-period button{font:inherit;padding:8px}#report-period-status{width:100%;font-size:13px;color:#53665e}';doc.head.append(periodStyle);
+ const periodStyle=doc.createElement('style');periodStyle.textContent='.end-label b{font-size:14px}.end-label{gap:8px}#report-period{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 0;font:15px system-ui}#report-period label{display:flex;align-items:center;gap:8px}#report-period input,#report-period button{font:inherit;padding:8px}#report-period-status{width:100%;font-size:13px;color:#53665e}';doc.head.append(periodStyle);
  const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; worker-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'";doc.head.prepend(csp);
  const bridge=doc.createElement('script');bridge.textContent=`document.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();e.stopImmediatePropagation();const name=a.getAttribute('data-private-export');if(name)parent.postMessage({type:'PRIVATE_REPORT_EXPORT',request_id:${JSON.stringify(nonce)},name},'*')},true);`;doc.head.append(bridge);
  return '<!doctype html>'+doc.documentElement.outerHTML;
@@ -475,9 +475,12 @@ function originalPeriodRuntime(){
 }
 function enhanceOriginalScript(source,nonce){
  if(!source.includes('const chart=new Chart(')||!source.includes('function update(){'))throw Error('Neznámy formát štatistiky.');
+ const legendStart=source.indexOf('function positionEndLegend(instance) {'),legendEnd=source.indexOf('\nconst chart=new Chart(',legendStart);
+ if(legendStart<0||legendEnd<0)throw Error('Neznámy formát legendy.');
+ source=source.slice(0,legendStart)+readableEndLegend.toString().replace('function readableEndLegend','function positionEndLegend')+'\n'+source.slice(legendEnd);
  source=source.replace('const chart=new Chart(',"const reportViewport=("+reportViewportRuntime.toString()+")("+JSON.stringify(nonce)+");Chart.defaults.devicePixelRatio=1;const canvas=document.getElementById('chart');canvas.width=1256;canvas.height=650;\nconst chart=new Chart(");
  source=source.replace('responsive:true,maintainAspectRatio:false','responsive:false,maintainAspectRatio:false');
- source=source.replace('options:{layout:{padding:{right:300}}',"options:{devicePixelRatio:1,resizeDelay:150,layout:{padding:{right:300}}");
+ source=source.replace('options:{layout:{padding:{right:300}}',"options:{devicePixelRatio:1,resizeDelay:150,layout:{padding:{right:420}}");
  source=source.replace('data:smoothSeries(data,smoothDays),borderColor:',"data:[{x:timestamp(report.start),y:0},...smoothSeries(data,smoothDays).map(point=>report.days.length===1?{x:point.x+86399999,y:point.y}:point)],borderColor:");
  return source+'\n'+filterReportPeriod.toString()+'\n('+originalPeriodRuntime.toString()+')();';
 }
@@ -506,3 +509,19 @@ function reportViewportRuntime(nonce){
  return {fitAll};
 }
 for(const [id,action] of [['statistics-zoom-in','in'],['statistics-zoom-out','out'],['statistics-zoom-fit','fit']])$(id).onclick=()=>{if(pageFrame)pageFrame.contentWindow.postMessage({type:'PRIVATE_REPORT_ZOOM',request_id:pageNonce,action},'*')};
+
+function readableEndLegend(instance){
+ if(!endLegendRows.length||!instance.chartArea)return;
+ const area=instance.chartArea,top=area.top+17,bottom=area.bottom-17,legend=document.getElementById('end-legend'),svg=document.getElementById('end-connectors');
+ const datasets=new Map(instance.data.datasets.map(d=>[d.login,d]));
+ const items=endLegendRows.map((row,order)=>{const d=datasets.get(row.login),last=d&&d.data.at(-1);return {row,order,anchorY:last?instance.scales.y.getPixelForValue(last.y):top+(bottom-top)*order/Math.max(1,endLegendRows.length-1),anchorX:last?instance.scales.x.getPixelForValue(last.x):area.right,hasLine:!!last}});
+ const labelX=legend.offsetLeft,gap=labelX-area.right,paths=[];svg.setAttribute('viewBox','0 0 '+instance.width+' '+instance.height);
+ for(const item of layoutEndLabels(items,top,bottom,32)){
+  const row=item.row,visible=visibility.get(row.login);row.label.style.top=(item.labelY-16)+'px';row.label.classList.toggle('is-hidden',!visible);row.input.checked=visible;
+  if(!visible||!item.hasLine)continue;
+  const color=row.color,id='arrow-'+row.login,y=Math.max(area.top,Math.min(area.bottom,item.anchorY));
+  const path='M'+(labelX-8)+' '+item.labelY+' C'+(labelX-gap*.42)+' '+item.labelY+' '+(area.right+gap*.38)+' '+y+' '+(area.right+12)+' '+y+' L'+item.anchorX+' '+y;
+  paths.push('<defs><marker id="'+id+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L10 5L0 10Z" fill="'+color+'"/></marker></defs><path d="'+path+'" style="fill:none;stroke:white;stroke-width:6;stroke-linecap:round"/><path class="end-connector" data-login="'+escape(row.login)+'" d="'+path+'" style="stroke:'+color+';stroke-width:2.6" marker-end="url(#'+id+')"/><circle cx="'+item.anchorX+'" cy="'+y+'" r="3" fill="'+color+'"/>');
+ }
+ svg.innerHTML=paths.join('');
+}
