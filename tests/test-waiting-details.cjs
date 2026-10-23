@@ -17,5 +17,8 @@ assert.equal(context.waitingDuration('2026-10-21T11:30:00Z',now),'2 d 3 h');
 for(const invalid of [null,{},new Array(101).fill(valid[0]),[{...valid[0],case_id:'../../secret'}],[{...valid[0],name:''}],[{...valid[0],reason:''}],[{...valid[0],waiting_since:'not-a-date'}]])assert.throws(()=>context.validateWaitingDetails(invalid));
 const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 assert(html.indexOf('id="tinder-waiting"')>html.indexOf('id="statistics-panel"'),'waiting section follows statistics');
+assert(source.includes('validateWaitingDetails(p.awaiting_details)'),'client consumes the backend waiting-detail contract');
+assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
+assert(source.includes('setInterval(refreshWaitingDurations,30000)'),'elapsed times refresh without waiting for the network');
 assert(!source.includes('localStorage.setItem')||!source.slice(start,end).includes('localStorage'),'waiting detail helpers never persist private values');
 console.log('Waiting chats: strict private-payload validation, durations, placement and no persistence passed.');

@@ -124,14 +124,16 @@ export function waitingDuration(value,now=Date.now()){
  const hours=Math.floor(minutes/60);if(hours<24)return `${hours} h ${minutes%60} min`;
  const days=Math.floor(hours/24);return `${days} d ${hours%24} h`;
 }
+let waitingTimeElements=[];
+function refreshWaitingDurations(){for(const [node,since] of waitingTimeElements)node.textContent=waitingDuration(since)}
 function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich chatov.'){
- $('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
+ waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
 function renderWaiting(details,aggregate){
- const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');list.replaceChildren();
+ const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
  count.textContent=String(details.length);status.textContent=details.length?`${details.length} ${details.length===1?'chat čaká':'chatov čaká'} na údaj alebo rozhodnutie od teba.`:'Žiadny chat nečaká na tvoju odpoveď.';
- for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header');head.append(element('span',row.name,'waiting-chat-name'),element('time',waitingDuration(row.waiting_since),'waiting-chat-time'));card.append(head,element('p',row.reason,'waiting-chat-reason'));list.append(card)}
+ for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));list.append(card)}
 }
 
 function statisticsPointer(data){
@@ -373,7 +375,7 @@ function loadProgress(){if(!progressLoading)progressLoading=readProgress().final
 async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');if(!token)return;const p=decode(file.content);
-  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const waitingDetails=validateWaitingDetails(p.waiting_details);if(waitingDetails&&Number.isSafeInteger(p.awaiting_operator)&&waitingDetails.length!==p.awaiting_operator)throw Error('Počet čakajúcich chatov nesúhlasí so súhrnom.');renderWaiting(waitingDetails,Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0);
+  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const waitingDetails=validateWaitingDetails(p.awaiting_details);if(waitingDetails&&Number.isSafeInteger(p.awaiting_operator)&&waitingDetails.length!==p.awaiting_operator)throw Error('Počet čakajúcich chatov nesúhlasí so súhrnom.');renderWaiting(waitingDetails,Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0);
   showAutomation(p.automation);
   if(!Number.isFinite(Date.parse(p.backend_checked_at))||Date.now()-Date.parse(p.backend_checked_at)>120000)throw Error('Stale backend');
   $('tinder-blocked').textContent=`Čaká na tvoje vyjadrenie: ${Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0} · Potrebuje overenie: ${Number.isSafeInteger(p.requires_verification)?p.requires_verification:0}. Tieto prípady sa automaticky nespracúvajú.`;
@@ -447,7 +449,7 @@ render();restorePairing();
 
 // Only aggregate progress polls automatically. Requests and decisions stay manual.
 function pollProgress(){if(token&&!working&&document.visibilityState!=='hidden'&&Date.now()>=readPause())return loadProgress()}
-setInterval(pollProgress,15000);
+setInterval(pollProgress,15000);setInterval(refreshWaitingDurations,30000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working)return;
  if(!token){await restorePairing();return}
