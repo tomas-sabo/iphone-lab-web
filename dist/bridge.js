@@ -410,11 +410,14 @@ function resetOriginalStatistics(){
 }
 function isolatedReport(html,chart,nonce){
  const doc=new DOMParser().parseFromString(html,'text/html');let libraries=0;
+ for(const script of doc.querySelectorAll('script:not([src])'))if(/const report\s*=/.test(script.textContent))script.textContent=enhanceOriginalScript(script.textContent);
  for(const n of doc.querySelectorAll('base,iframe,object,embed,form,meta[http-equiv]'))n.remove();
  for(const n of doc.querySelectorAll('*'))for(const a of [...n.attributes])if(/^on/i.test(a.name)||['srcset','action','formaction'].includes(a.name))n.removeAttribute(a.name);
  for(const n of doc.querySelectorAll('[src]')){if(n.tagName==='SCRIPT'&&/^([.]\/)?chart[.]umd[.]js$/.test(n.getAttribute('src'))){n.removeAttribute('src');n.textContent=chart.replace(/<\/script/gi,'<\\/script');libraries++}else n.remove()}
  if(libraries!==1)throw Error('Report neobsahuje očakávanú knižnicu grafov.');
  for(const a of doc.querySelectorAll('[href]')){const name=a.getAttribute('href').replace(/^\.\//,'');a.removeAttribute('href');if(PAGE_FILES.slice(2).includes(name)){a.setAttribute('href','#');a.setAttribute('data-private-export',name)}}
+ for(const style of doc.querySelectorAll('style'))style.textContent=style.textContent.replace(/@media\s*\(max-width:\s*700px\)/g,'@media(max-width:0px)');
+ const periodStyle=doc.createElement('style');periodStyle.textContent='#report-period{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 0;font:15px system-ui}#report-period label{display:flex;align-items:center;gap:8px}#report-period input,#report-period button{font:inherit;padding:8px}#report-period-status{width:100%;font-size:13px;color:#53665e}';doc.head.append(periodStyle);
  const csp=doc.createElement('meta');csp.httpEquiv='Content-Security-Policy';csp.content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; worker-src 'none'; frame-src 'none'; child-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'";doc.head.prepend(csp);
  const bridge=doc.createElement('script');bridge.textContent=`document.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;e.preventDefault();e.stopImmediatePropagation();const name=a.getAttribute('data-private-export');if(name)parent.postMessage({type:'PRIVATE_REPORT_EXPORT',request_id:${JSON.stringify(nonce)},name},'*')},true);`;doc.head.append(bridge);
  return '<!doctype html>'+doc.documentElement.outerHTML;
@@ -438,11 +441,41 @@ window.addEventListener('message',async e=>{
 
 function fitOriginalReport(){
  if(!pageFrame)return;
- const host=$('statistics-page-frame'),width=host.clientWidth;
- if(!width)return;
- const scale=Math.min(1,width/1320);
- pageFrame.style.width='1320px';pageFrame.style.height=Math.max(1,host.clientHeight/scale)+'px';
- pageFrame.style.transform=`scale(${scale})`;pageFrame.style.transformOrigin='top left';
+ pageFrame.style.width='100%';pageFrame.style.height='100%';pageFrame.style.transform='none';
 }
-window.addEventListener('resize',fitOriginalReport);
-if(typeof ResizeObserver!=='undefined')new ResizeObserver(fitOriginalReport).observe($('statistics-page-frame'));
+// Date arithmetic is independent of rendering and never modifies the saved snapshot.
+function filterReportPeriod(full,start,end){
+ const valid=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
+ if(!valid(start)||!valid(end)||start>end||start<full.start||end>full.end)throw Error('Vyber platné obdobie v dostupných dátach. Dátum Od musí byť najneskôr Do.');
+ const inside=v=>typeof v==='string'&&v>=start&&v<=end;
+ const people=full.people.map(p=>{const prs=p.prs.filter(x=>inside(x.date)),jira=p.jira.filter(x=>inside(x.created));if(jira.some(x=>typeof x.key!=='string'||!x.key))throw Error('Report ešte nemá údaje pre dátumový filter. Skús ho otvoriť znova po synchronizácii.');return {...p,events:p.events.filter(x=>inside(x.date)),prs,jira,counts:{...p.counts,prs:prs.length,merged:prs.filter(x=>x.state==='merged').length,open:prs.filter(x=>x.state==='open').length,jira:jira.length}}});
+ return {...full,start,end,days:full.days.filter(inside),people,counts:{...full.counts,people:people.length,humanPRs:people.reduce((n,p)=>n+p.prs.length,0),uniqueJira:new Set(people.flatMap(p=>p.jira.map(x=>x.key))).size}};
+}
+function originalPeriodRuntime(){
+ const full={...report,people:report.people,days:report.days,counts:report.counts};
+ const form=document.createElement('form');form.id='report-period';form.innerHTML='<label>Od <input id="report-from" type="date" required></label><label>Do <input id="report-to" type="date" required></label><button type="button" id="report-apply">Zobraziť obdobie</button><button type="button" id="report-all">Celé obdobie</button><span id="report-period-status" role="status"></span>';
+ document.querySelector('header').after(form);
+ for(const warning of document.querySelectorAll('p.warning'))if(warning.textContent.includes('Pocet PR je kumulovany'))warning.textContent='PR sa počítajú podľa vytvorenia, Jira podľa vytvorenia tiketu, MD podľa odovzdania alebo uzavretia. Započítané sú iba dátumy Od–Do vrátane, bez staršieho počiatočného stavu. Merged a Open sú stavy pri exporte. Jira bez PR / Iba merged PR upravujú odhady MD, nie inventárne počty. Exporty zostávajú za celé pôvodné obdobie.';
+ const from=document.getElementById('report-from'),to=document.getElementById('report-to'),status=document.getElementById('report-period-status');
+ for(const input of [from,to]){input.min=full.start;input.max=full.end}from.value=full.start;to.value=full.end;
+ function apply(){
+  try{const next=filterReportPeriod(full,from.value,to.value);Object.assign(report,next);chart.options.scales.x.min=timestamp(next.start);chart.options.scales.x.max=timestamp(next.end)+(next.start===next.end?86400000:0);chart.options.scales.x.title.text='Dátum ('+next.start+' – '+next.end+')';
+   const stats=document.querySelectorAll('.stats strong'),labels=document.querySelectorAll('.stats span');stats[0].textContent=next.people.length;stats[1].textContent=next.counts.humanPRs;stats[2].textContent=next.counts.uniqueJira;labels[2].textContent='jedinečné Jira vytvorené vo vybranom období';
+   const time=document.querySelector('header time');if(time)time.textContent=next.start+' — '+next.end;
+   const intro=document.querySelector('header p');if(intro)intro.textContent='Kumulatívne MD za vybrané obdobie / rovnaký model pre každého / 1 MD = 8 h';
+   update();status.textContent='Zobrazené '+next.start+' – '+next.end+'. Exporty obsahujú pôvodný úplný report.';
+   document.body.dataset.periodStart=next.start;document.body.dataset.periodEnd=next.end;
+  }catch(e){status.textContent=e.message}
+ }
+ document.getElementById('report-apply').onclick=apply;form.addEventListener('submit',e=>e.preventDefault());form.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();apply()}});document.getElementById('report-all').onclick=()=>{from.value=full.start;to.value=full.end;apply()};
+ // Release GPU backing storage when leaving the private report.
+ window.addEventListener('pagehide',()=>chart.destroy(),{once:true});
+ apply();
+}
+function enhanceOriginalScript(source){
+ if(!source.includes('const chart=new Chart(')||!source.includes('function update(){'))throw Error('Neznámy formát štatistiky.');
+ source=source.replace('const chart=new Chart(',"const fitReport=()=>{document.body.style.width='1320px';document.body.style.zoom=Math.min(1,window.innerWidth/1320)};fitReport();window.addEventListener('resize',fitReport);Chart.defaults.devicePixelRatio=1;\nconst chart=new Chart(");
+ source=source.replace('options:{layout:{padding:{right:300}}',"options:{devicePixelRatio:1,resizeDelay:150,layout:{padding:{right:300}}");
+ source=source.replace('data:smoothSeries(data,smoothDays),borderColor:',"data:[{x:timestamp(report.start),y:0},...smoothSeries(data,smoothDays).map(point=>report.days.length===1?{x:point.x+86399999,y:point.y}:point)],borderColor:");
+ return source+'\n'+filterReportPeriod.toString()+'\n('+originalPeriodRuntime.toString()+')();';
+}
