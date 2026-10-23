@@ -491,15 +491,17 @@ function reportViewportRuntime(nonce){
  Object.assign(scroll.style,{position:'fixed',inset:'0',overflow:'auto',overscrollBehavior:'contain',touchAction:'pan-x pan-y',WebkitOverflowScrolling:'touch'});
  Object.assign(space.style,{position:'relative',overflow:'hidden'});Object.assign(content.style,{position:'absolute',left:'0',top:'0',width:'1320px',transformOrigin:'top left'});
  let scale=1,fit=true,pinch=null;
+ function fittedScale(){return Math.min(1,scroll.clientWidth/1320,scroll.clientHeight/Math.max(1,content.scrollHeight))}
+ space.style.marginInline='auto';
  function size(){space.style.width=(1320*scale)+'px';space.style.height=(content.scrollHeight*scale)+'px';content.style.transform='scale('+scale+')'}
- function zoom(value,x=scroll.clientWidth/2,y=scroll.clientHeight/2){const old=scale,ax=(scroll.scrollLeft+x)/old,ay=(scroll.scrollTop+y)/old;scale=Math.max(Math.min(1,scroll.clientWidth/1320),Math.min(2,value));size();scroll.scrollLeft=ax*scale-x;scroll.scrollTop=ay*scale-y;scroll.dataset.scale=String(scale)}
- function fitAll(){fit=true;scale=Math.min(1,scroll.clientWidth/1320);size();scroll.scrollLeft=0;scroll.scrollTop=0;scroll.dataset.scale=String(scale)}
- fitAll();new ResizeObserver(size).observe(content);
+ function zoom(value,x=scroll.clientWidth/2,y=scroll.clientHeight/2){const old=scale,ax=(scroll.scrollLeft+x)/old,ay=(scroll.scrollTop+y)/old;scale=Math.max(fittedScale(),Math.min(2,value));size();scroll.scrollLeft=ax*scale-x;scroll.scrollTop=ay*scale-y;scroll.dataset.scale=String(scale)}
+ function fitAll(){fit=true;scale=fittedScale();size();scroll.scrollLeft=0;scroll.scrollTop=0;scroll.dataset.scale=String(scale)}
+ fitAll();new ResizeObserver(()=>{if(fit)fitAll();else size()}).observe(content);
  window.addEventListener('resize',()=>{if(fit)fitAll();else size()});
  window.addEventListener('message',e=>{const v=e.data;if(e.source!==parent||v?.type!=='PRIVATE_REPORT_ZOOM'||v.request_id!==nonce)return;if(v.action==='fit')fitAll();else if(['in','out'].includes(v.action)){fit=false;zoom(scale*(v.action==='in'?1.4:1/1.4))}});
  const midpoint=touches=>({x:(touches[0].clientX+touches[1].clientX)/2,y:(touches[0].clientY+touches[1].clientY)/2,d:Math.hypot(touches[0].clientX-touches[1].clientX,touches[0].clientY-touches[1].clientY)});
  scroll.addEventListener('touchstart',e=>{if(e.touches.length===2){const m=midpoint(e.touches);pinch={...m,scale,ax:(scroll.scrollLeft+m.x)/scale,ay:(scroll.scrollTop+m.y)/scale};e.preventDefault()}},{passive:false});
- scroll.addEventListener('touchmove',e=>{if(pinch&&e.touches.length===2){e.preventDefault();fit=false;const m=midpoint(e.touches);scale=Math.max(Math.min(1,scroll.clientWidth/1320),Math.min(2,pinch.scale*m.d/Math.max(1,pinch.d)));size();scroll.scrollLeft=pinch.ax*scale-m.x;scroll.scrollTop=pinch.ay*scale-m.y;scroll.dataset.scale=String(scale)}},{passive:false});
+ scroll.addEventListener('touchmove',e=>{if(pinch&&e.touches.length===2){e.preventDefault();fit=false;const m=midpoint(e.touches);scale=Math.max(fittedScale(),Math.min(2,pinch.scale*m.d/Math.max(1,pinch.d)));size();scroll.scrollLeft=pinch.ax*scale-m.x;scroll.scrollTop=pinch.ay*scale-m.y;scroll.dataset.scale=String(scale)}},{passive:false});
  const end=()=>{pinch=null};scroll.addEventListener('touchend',end);scroll.addEventListener('touchcancel',end);
  return {fitAll};
 }
