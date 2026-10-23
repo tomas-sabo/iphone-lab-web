@@ -109,13 +109,14 @@ let statisticsManifest=null,statisticsData=null,statisticsLoading=false,statisti
 function resetStatistics(){resetOriginalStatistics();statisticsManifest=null;statisticsData=null;$('statistics-body').replaceChildren();$('statistics-status').textContent='Pripoj bridge na načítanie súkromného reportu.';clearWaiting()}
 const SHA256=/^[a-f0-9]{64}$/;
 const WAITING_CASE=/^case-[a-f0-9]{24}$/;
+const WAITING_STATES=new Set(['needs_user','uncertain','attempt_started','stale','prepared','dispatched']);
 export function validateWaitingDetails(value){
  if(value===undefined)return null;
  if(!Array.isArray(value)||value.length>100)throw Error('Neplatné detaily čakajúcich chatov.');
  return value.map(row=>{
-  if(!row||!WAITING_CASE.test(row.case_id)||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000||typeof row.waiting_since!=='string')throw Error('Neplatný čakajúci chat.');
+  if(!row||!WAITING_CASE.test(row.case_id)||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000||!WAITING_STATES.has(row.state)||typeof row.waiting_since!=='string')throw Error('Neplatný čakajúci chat.');
   const since=Date.parse(row.waiting_since);if(!Number.isFinite(since)||since>Date.now()+300000)throw Error('Neplatný čas čakajúceho chatu.');
-  return {case_id:row.case_id,name:row.name.trim(),reason:row.reason.trim(),waiting_since:row.waiting_since};
+  return {case_id:row.case_id,name:row.name.trim(),reason:row.reason.trim(),state:row.state,waiting_since:row.waiting_since};
  });
 }
 export function waitingDuration(value,now=Date.now()){
@@ -132,7 +133,7 @@ function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich cha
 function renderWaiting(details,aggregate){
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
- count.textContent=String(details.length);status.textContent=details.length?`${details.length} ${details.length===1?'chat čaká':'chatov čaká'} na údaj alebo rozhodnutie od teba.`:'Žiadny chat nečaká na tvoju odpoveď.';
+ count.textContent=String(details.length);status.textContent=details.length?`${details.length} ${details.length===1?'chat stojí alebo čaká':'chatov stojí alebo čaká'} na ďalší krok.`:'Žiadny chat nečaká na tvoju odpoveď.';
  for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));list.append(card)}
 }
 
@@ -375,7 +376,7 @@ function loadProgress(){if(!progressLoading)progressLoading=readProgress().final
 async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');if(!token)return;const p=decode(file.content);
-  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const waitingDetails=validateWaitingDetails(p.awaiting_details);if(waitingDetails&&Number.isSafeInteger(p.awaiting_operator)&&waitingDetails.length!==p.awaiting_operator)throw Error('Počet čakajúcich chatov nesúhlasí so súhrnom.');renderWaiting(waitingDetails,Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0);
+  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const waitingDetails=validateWaitingDetails(p.awaiting_details),waitingCount=Number.isSafeInteger(p.waiting_count)?p.waiting_count:p.awaiting_operator;if(waitingDetails&&Number.isSafeInteger(waitingCount)&&waitingDetails.length!==waitingCount)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');renderWaiting(waitingDetails,Number.isSafeInteger(waitingCount)?waitingCount:0);
   showAutomation(p.automation);
   if(!Number.isFinite(Date.parse(p.backend_checked_at))||Date.now()-Date.parse(p.backend_checked_at)>120000)throw Error('Stale backend');
   $('tinder-blocked').textContent=`Čaká na tvoje vyjadrenie: ${Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0} · Potrebuje overenie: ${Number.isSafeInteger(p.requires_verification)?p.requires_verification:0}. Tieto prípady sa automaticky nespracúvajú.`;
