@@ -33,3 +33,18 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 .statistics-zoom{display:flex;gap:6px}.statistics-zoom button{min-width:44px;min-height:44px;padding:8px}.statistics-page-toolbar{gap:8px}.statistics-page-toolbar>span{flex:1 1 100%;font-size:11px}
 
 .tinder-automation{margin-top:24px;padding:20px;border:1px solid #c9d8d1;border-radius:18px;background:#fff}.automation-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.automation-heading h1{margin:0;font-size:1.2rem}.automation-heading button{width:auto;min-width:108px;flex-shrink:0;margin:0}.automation-heading button[aria-checked="false"]{background:#e4ebe7;color:#24483c}.automation-heading button[aria-checked="true"]{background:#166b50;color:#fff}.tinder-automation p{line-height:1.45}
+
+/* Private Tinder holds come from the authenticated progress snapshot; values are never persisted locally. */
+.tinder-waiting{text-align:left;margin-top:14px;border:1px solid #d6ddd5;border-radius:16px;background:#fff;overflow:hidden}
+.tinder-waiting>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;font-size:1.05rem;font-weight:700;cursor:pointer;list-style-position:inside}
+.waiting-count{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 9px;border-radius:999px;background:#e5eee0;color:#143d35;font-size:.85rem}
+.tinder-waiting[open]>summary{border-bottom:1px solid #e1e7df}
+#tinder-waiting-status{margin:16px 20px}
+.waiting-list{padding:0 20px 8px}
+.waiting-chat{padding:16px 0;border-top:1px solid #e1e7df}
+.waiting-chat:first-child{border-top:0}
+.waiting-chat-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:7px}
+.waiting-chat-name{font-size:1rem;font-weight:750;color:#143d35}
+.waiting-chat-time{flex:0 0 auto;font-size:.78rem;font-weight:650;color:#63746a}
+.waiting-chat-reason{margin:0;color:#354c44;font-size:.92rem;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:420px){.tinder-waiting>summary{padding:16px}.waiting-list{padding:0 16px 6px}#tinder-waiting-status{margin:14px 16px}.waiting-chat-header{align-items:flex-start;flex-direction:column;gap:3px}}
