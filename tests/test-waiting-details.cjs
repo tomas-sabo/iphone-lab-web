@@ -21,5 +21,12 @@ assert(source.includes('validateWaitingDetails(p.awaiting_details)'),'client con
 assert(source.includes('p.waiting_count'),'client validates the full stalled-chat count rather than only operator questions');
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
 assert(source.includes('setInterval(refreshWaitingDurations,30000)'),'elapsed times refresh without waiting for the network');
+assert(source.includes('setInterval(pollProgress,60000)'),'automatic aggregate polling is limited to once per minute');
+assert(!source.includes('setInterval(pollProgress,15000)'),'legacy high-frequency polling is removed');
+assert(source.includes('const pendingDrafts=[...items].filter'),'explicit Refresh batches every answered request before fetching state');
+assert(source.includes('Odoslať všetky vyplnené vyjadrenia'),'Refresh uses one confirmation for the complete answer batch');
+assert(source.includes("null,true);if(!sent)return"),'individual writes reuse the single batch confirmation');
+assert(source.indexOf('for(const item of pendingDrafts)')<source.indexOf("message('Načítavam požiadavky…');await refresh()"),'Refresh sends answers before loading the new snapshot');
+assert(!source.includes("throw Error('Stale backend')"),'unchanged semantic progress does not require timestamp-only writes');
 assert(!source.includes('localStorage.setItem')||!source.slice(start,end).includes('localStorage'),'waiting detail helpers never persist private values');
 console.log('Waiting chats: strict private-payload validation, durations, placement and no persistence passed.');
