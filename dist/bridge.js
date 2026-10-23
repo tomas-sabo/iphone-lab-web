@@ -423,7 +423,7 @@ async function openOriginalStatistics(){
  if(!token){$('statistics-page-status').textContent='Najprv pripoj bridge.';return}
  resetOriginalStatistics();const generation=pageGeneration;$('statistics-open').disabled=true;$('statistics-page-status').textContent='Načítavam a overujem pôvodnú stránku…';
  try{const m=await pagePointer(decode((await api('/contents/operator/statistics-page/index.json?ref=main')).content));const html=await readPageAsset(m,'index.html'),chart=await readPageAsset(m,'chart.umd.js');if(generation!==pageGeneration||!token)return;
- const nonce=crypto.randomUUID(),safe=isolatedReport(new TextDecoder('utf-8',{fatal:true}).decode(html),new TextDecoder('utf-8',{fatal:true}).decode(chart),nonce);const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.title='Pôvodná štatistika';frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'");frame.srcdoc=safe;pageFrame=frame;pageNonce=nonce;pageManifest=m;$('statistics-page-frame').replaceChildren(frame);$('statistics-page-info').textContent=`Obdobie ${m.start} – ${m.end}`;$('statistics-page-dialog').showModal();$('statistics-page-status').textContent='Pôvodná stránka otvorená. Ide o posledný prenesený report.';
+ const nonce=crypto.randomUUID(),safe=isolatedReport(new TextDecoder('utf-8',{fatal:true}).decode(html),new TextDecoder('utf-8',{fatal:true}).decode(chart),nonce);const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.title='Pôvodná štatistika';frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'");frame.srcdoc=safe;pageFrame=frame;pageNonce=nonce;pageManifest=m;$('statistics-page-frame').replaceChildren(frame);fitOriginalReport();$('statistics-page-info').textContent=`Obdobie ${m.start} – ${m.end}`;$('statistics-page-dialog').showModal();fitOriginalReport();$('statistics-page-status').textContent='Pôvodná stránka otvorená. Ide o posledný prenesený report.';
  }catch(e){if(generation===pageGeneration)$('statistics-page-status').textContent=e.status===404?'Report sa ešte prenáša. Skús otvoriť znova.':e.message}
  finally{if(generation===pageGeneration)$('statistics-open').disabled=false}
 }
@@ -435,3 +435,14 @@ window.addEventListener('message',async e=>{
  const generation=pageGeneration;$('statistics-page-info').textContent='Pripravujem export…';
  try{const bytes=await readPageAsset(pageManifest,v.name);if(generation!==pageGeneration||!token)return;if(pageDownloadURL)URL.revokeObjectURL(pageDownloadURL);pageDownloadURL=URL.createObjectURL(new Blob([bytes],{type:v.name.endsWith('.json')?'application/json':'text/csv;charset=utf-8'}));const a=$('statistics-page-download');a.href=pageDownloadURL;a.download=v.name;a.textContent='Stiahnuť '+v.name;a.hidden=false;$('statistics-page-info').textContent='Export je pripravený v hornej lište.'}catch(err){if(generation===pageGeneration)$('statistics-page-info').textContent=err.message}
 });
+
+function fitOriginalReport(){
+ if(!pageFrame)return;
+ const host=$('statistics-page-frame'),width=host.clientWidth;
+ if(!width)return;
+ const scale=Math.min(1,width/1320);
+ pageFrame.style.width='1320px';pageFrame.style.height=Math.max(1,host.clientHeight/scale)+'px';
+ pageFrame.style.transform=`scale(${scale})`;pageFrame.style.transformOrigin='top left';
+}
+window.addEventListener('resize',fitOriginalReport);
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(fitOriginalReport).observe($('statistics-page-frame'));
