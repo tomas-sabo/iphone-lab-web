@@ -50,7 +50,7 @@ function render(){
   const group=element('details',undefined,'request-group');
   const matches=items.filter(item=>item.record.request.source===source);
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
-  group.open=groupOpen.has(source)?groupOpen.get(source):pending>0||(source==='whatsapp'&&whatsappNames.length>0);
+  group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
   heading.onclick=()=>groupOpen.set(source,!group.open);
   heading.append(element('span',`${pending}/${matches.length}${source==='whatsapp'&&whatsappNames.length?' · '+whatsappNames.length+' kontaktov':''}`,'group-count'));
