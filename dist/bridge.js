@@ -410,7 +410,7 @@ function resetOriginalStatistics(){
 }
 function isolatedReport(html,chart,nonce){
  const doc=new DOMParser().parseFromString(html,'text/html');let libraries=0;
- for(const script of doc.querySelectorAll('script:not([src])'))if(/const report\s*=/.test(script.textContent))script.textContent=enhanceOriginalScript(script.textContent);
+ for(const script of doc.querySelectorAll('script:not([src])'))if(/const report\s*=/.test(script.textContent))script.textContent=enhanceOriginalScript(script.textContent,nonce);
  for(const n of doc.querySelectorAll('base,iframe,object,embed,form,meta[http-equiv]'))n.remove();
  for(const n of doc.querySelectorAll('*'))for(const a of [...n.attributes])if(/^on/i.test(a.name)||['srcset','action','formaction'].includes(a.name))n.removeAttribute(a.name);
  for(const n of doc.querySelectorAll('[src]')){if(n.tagName==='SCRIPT'&&/^([.]\/)?chart[.]umd[.]js$/.test(n.getAttribute('src'))){n.removeAttribute('src');n.textContent=chart.replace(/<\/script/gi,'<\\/script');libraries++}else n.remove()}
@@ -472,10 +472,34 @@ function originalPeriodRuntime(){
  window.addEventListener('pagehide',()=>chart.destroy(),{once:true});
  apply();
 }
-function enhanceOriginalScript(source){
+function enhanceOriginalScript(source,nonce){
  if(!source.includes('const chart=new Chart(')||!source.includes('function update(){'))throw Error('Neznámy formát štatistiky.');
- source=source.replace('const chart=new Chart(',"const fitReport=()=>{document.body.style.width='1320px';document.body.style.zoom=Math.min(1,window.innerWidth/1320)};fitReport();window.addEventListener('resize',fitReport);Chart.defaults.devicePixelRatio=1;\nconst chart=new Chart(");
+ source=source.replace('const chart=new Chart(',"const reportViewport=("+reportViewportRuntime.toString()+")("+JSON.stringify(nonce)+");Chart.defaults.devicePixelRatio=1;const canvas=document.getElementById('chart');canvas.width=1256;canvas.height=650;\nconst chart=new Chart(");
+ source=source.replace('responsive:true,maintainAspectRatio:false','responsive:false,maintainAspectRatio:false');
  source=source.replace('options:{layout:{padding:{right:300}}',"options:{devicePixelRatio:1,resizeDelay:150,layout:{padding:{right:300}}");
  source=source.replace('data:smoothSeries(data,smoothDays),borderColor:',"data:[{x:timestamp(report.start),y:0},...smoothSeries(data,smoothDays).map(point=>report.days.length===1?{x:point.x+86399999,y:point.y}:point)],borderColor:");
  return source+'\n'+filterReportPeriod.toString()+'\n('+originalPeriodRuntime.toString()+')();';
 }
+
+function reportViewportRuntime(nonce){
+ const body=document.body,scroll=document.createElement('div'),space=document.createElement('div'),content=document.createElement('div');
+ scroll.id='report-scroll';scroll.tabIndex=0;scroll.setAttribute('aria-label','Posúvanie celého reportu');space.id='report-space';content.id='report-content';
+ while(body.firstChild)content.append(body.firstChild);
+ space.append(content);scroll.append(space);body.append(scroll);
+ Object.assign(document.documentElement.style,{height:'100%',overflow:'hidden'});Object.assign(body.style,{margin:'0',width:'100%',height:'100%',overflow:'hidden'});
+ Object.assign(scroll.style,{position:'fixed',inset:'0',overflow:'auto',overscrollBehavior:'contain',touchAction:'pan-x pan-y',WebkitOverflowScrolling:'touch'});
+ Object.assign(space.style,{position:'relative',overflow:'hidden'});Object.assign(content.style,{position:'absolute',left:'0',top:'0',width:'1320px',transformOrigin:'top left'});
+ let scale=1,fit=true,pinch=null;
+ function size(){space.style.width=(1320*scale)+'px';space.style.height=(content.scrollHeight*scale)+'px';content.style.transform='scale('+scale+')'}
+ function zoom(value,x=scroll.clientWidth/2,y=scroll.clientHeight/2){const old=scale,ax=(scroll.scrollLeft+x)/old,ay=(scroll.scrollTop+y)/old;scale=Math.max(Math.min(1,scroll.clientWidth/1320),Math.min(2,value));size();scroll.scrollLeft=ax*scale-x;scroll.scrollTop=ay*scale-y;scroll.dataset.scale=String(scale)}
+ function fitAll(){fit=true;scale=Math.min(1,scroll.clientWidth/1320);size();scroll.scrollLeft=0;scroll.scrollTop=0;scroll.dataset.scale=String(scale)}
+ fitAll();new ResizeObserver(size).observe(content);
+ window.addEventListener('resize',()=>{if(fit)fitAll();else size()});
+ window.addEventListener('message',e=>{const v=e.data;if(e.source!==parent||v?.type!=='PRIVATE_REPORT_ZOOM'||v.request_id!==nonce)return;if(v.action==='fit')fitAll();else if(['in','out'].includes(v.action)){fit=false;zoom(scale*(v.action==='in'?1.4:1/1.4))}});
+ const midpoint=touches=>({x:(touches[0].clientX+touches[1].clientX)/2,y:(touches[0].clientY+touches[1].clientY)/2,d:Math.hypot(touches[0].clientX-touches[1].clientX,touches[0].clientY-touches[1].clientY)});
+ scroll.addEventListener('touchstart',e=>{if(e.touches.length===2){const m=midpoint(e.touches);pinch={...m,scale,ax:(scroll.scrollLeft+m.x)/scale,ay:(scroll.scrollTop+m.y)/scale};e.preventDefault()}},{passive:false});
+ scroll.addEventListener('touchmove',e=>{if(pinch&&e.touches.length===2){e.preventDefault();fit=false;const m=midpoint(e.touches);scale=Math.max(Math.min(1,scroll.clientWidth/1320),Math.min(2,pinch.scale*m.d/Math.max(1,pinch.d)));size();scroll.scrollLeft=pinch.ax*scale-m.x;scroll.scrollTop=pinch.ay*scale-m.y;scroll.dataset.scale=String(scale)}},{passive:false});
+ const end=()=>{pinch=null};scroll.addEventListener('touchend',end);scroll.addEventListener('touchcancel',end);
+ return {fitAll};
+}
+for(const [id,action] of [['statistics-zoom-in','in'],['statistics-zoom-out','out'],['statistics-zoom-fit','fit']])$(id).onclick=()=>{if(pageFrame)pageFrame.contentWindow.postMessage({type:'PRIVATE_REPORT_ZOOM',request_id:pageNonce,action},'*')};
