@@ -31,3 +31,5 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 #statistics-page-frame{overflow:hidden;position:relative}#statistics-page-frame iframe{display:block;max-width:none;max-height:none}
 
 .statistics-zoom{display:flex;gap:6px}.statistics-zoom button{min-width:44px;min-height:44px;padding:8px}.statistics-page-toolbar{gap:8px}.statistics-page-toolbar>span{flex:1 1 100%;font-size:11px}
+
+.tinder-automation{margin-top:24px;padding:20px;border:1px solid #c9d8d1;border-radius:18px;background:#fff}.automation-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.automation-heading h1{margin:0;font-size:1.2rem}.automation-heading button{width:auto;min-width:108px;flex-shrink:0;margin:0}.automation-heading button[aria-checked="false"]{background:#e4ebe7;color:#24483c}.automation-heading button[aria-checked="true"]{background:#166b50;color:#fff}.tinder-automation p{line-height:1.45}

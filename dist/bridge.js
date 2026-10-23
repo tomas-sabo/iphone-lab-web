@@ -31,7 +31,7 @@ async function api(path,options={}){
  const remaining=response.headers?.get('X-RateLimit-Remaining'),reset=Number(response.headers?.get('X-RateLimit-Reset')||0)*1000,retry=Number(response.headers?.get('Retry-After')||0)*1000;
  if(remaining!==null&&remaining!==undefined&&Number(remaining)<20)pauseUntil(Math.max(Date.now()+60000,reset+5000));
  if(!response.ok){
-  if(response.status===401){forgetPairing();resetConversations(true);token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
+  if(response.status===401){showAutomation(null);forgetPairing();resetConversations(true);token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
   if([403,429].includes(response.status)){
    const until=Math.max(Date.now()+Math.max(retry,60000),remaining==='0'?reset+5000:0);pauseUntil(until);
    throw Error(`GitHub dočasne odmietol požiadavku. Ďalší pokus po ${new Date(until).toLocaleTimeString('sk-SK')}. Párovanie zostáva uložené.`);
@@ -304,11 +304,53 @@ $('manual-no').onclick=()=>saveManualChoice(false);
 $('manual-close').onclick=()=>{$('manual-dialog').close();selectedManualContact=null};
 $('manual-dialog').oncancel=()=>{selectedManualContact=null};
 
+const AUTOMATION_PATH='/contents/operator/tinder-automation.json';
+const AUTOMATION_PENDING_KEY='iphone-lab-automation-pending-v1';
+let automationState=null,automationSaving=false,automationPending=null;
+try{automationPending=JSON.parse(localStorage.getItem(AUTOMATION_PENDING_KEY)||'null')}catch{}
+function saveAutomationPending(value){automationPending=value;try{if(value)localStorage.setItem(AUTOMATION_PENDING_KEY,JSON.stringify(value));else localStorage.removeItem(AUTOMATION_PENDING_KEY)}catch{}}
+function freshAutomation(s){return s&&typeof s.enabled==='boolean'&&/^[a-f0-9]{64}$/.test(s.revision)&&Number.isFinite(Date.parse(s.checked_at))&&Date.now()-Date.parse(s.checked_at)<120000&&Date.parse(s.checked_at)<=Date.now()+30000}
+function showAutomation(s,error=''){
+ automationState=freshAutomation(s)?s:null;
+ const button=$('tinder-automation-toggle');
+ button.setAttribute?.('aria-checked',String(automationState?.enabled===true));
+ button.disabled=!token||!automationState||automationSaving||!!automationPending;
+ button.textContent=automationState?(automationState.enabled?'Zapnuté':'Vypnuté'):'Stav neznámy';
+ let notice=error;
+ if(automationPending&&s?.receipt?.id===automationPending.id){
+  notice=s.receipt.result==='applied'?'Zmena potvrdená MacBookom.':s.receipt.result==='expired'?'Požiadavka vypršala. Zopakuj zmenu.':'Stav sa medzitým zmenil. Skontroluj ho a zopakuj zmenu.';
+  saveAutomationPending(null);button.disabled=!token||!automationState||automationSaving;
+ }else if(automationPending&&automationState&&Date.parse(s.checked_at)>Date.parse(automationPending.expires_at)){
+  saveAutomationPending(null);notice='Potvrdenie zmeny neprišlo včas. Skontroluj stav a zopakuj zmenu.';button.disabled=!token||automationSaving;
+ }
+ $('tinder-automation-status').textContent=automationPending?'Čakám na potvrdenie z MacBooku… Zobrazený prepínač je posledný potvrdený stav.':notice||(automationState?`Potvrdené na MacBooku: ${new Date(s.checked_at).toLocaleTimeString('sk-SK')}.`:'Aktuálny stav sa nepodarilo overiť. Skontroluj pripojenie MacBooku.');
+}
+$('tinder-automation-toggle').onclick=async()=>{
+ if(!token||automationSaving||automationPending||!freshAutomation(automationState))return;
+ const enabled=!automationState.enabled;
+ if(!confirm(enabled?'Zapnúť automatické odpovedanie Tinder + Rafi podľa existujúcich pravidiel?':'Vypnúť nové automatické spracovanie a odosielanie Tinder + Rafi? Už odoslanú správu nemožno vrátiť.'))return;
+ automationSaving=true;let failure='';showAutomation(automationState,'Odosielam požiadavku…');
+ try{
+  const file=await api(AUTOMATION_PATH+'?ref=main'),data=decode(file.content);
+  if(data.schema_version!==1||!freshAutomation(data.status)||data.status.revision!==automationState?.revision)throw Error('Stav sa zmenil. Obnov panel a skús znova.');
+  if(data.request&&data.request.id!==data.status.receipt?.id&&Date.parse(data.request.expires_at)>Date.now())throw Error('Predchádzajúca zmena ešte čaká na potvrdenie.');
+  const request={id:crypto.randomUUID(),operator:'Tomy',enabled,expected_revision:data.status.revision,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+120000).toISOString()};
+  data.request=request;
+  // Keep the ID even on an uncertain HTTP response; never blindly retry a write.
+  saveAutomationPending({id:request.id,expires_at:request.expires_at});
+  await api(AUTOMATION_PATH,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Request Tinder automation change',content:encode(data)})});
+  showAutomation(automationState);
+ }catch(e){failure=e.message||'Zmenu sa nepodarilo potvrdiť.'}
+ finally{automationSaving=false;await loadProgress();showAutomation(automationState,failure)}
+};
 function loadProgress(){if(!progressLoading)progressLoading=readProgress().finally(()=>{progressLoading=null});return progressLoading}
 async function readProgress(){
  try{
-  const file=await api('/contents/operator/tinder-progress.json?ref=main');const p=decode(file.content);
+  const file=await api('/contents/operator/tinder-progress.json?ref=main');if(!token)return;const p=decode(file.content);
   if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');
+  showAutomation(p.automation);
+  if(!Number.isFinite(Date.parse(p.backend_checked_at))||Date.now()-Date.parse(p.backend_checked_at)>120000)throw Error('Stale backend');
+  $('tinder-blocked').textContent=`Čaká na tvoje vyjadrenie: ${Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0} · Potrebuje overenie: ${Number.isSafeInteger(p.requires_verification)?p.requires_verification:0}. Tieto prípady sa automaticky nespracúvajú.`;
   if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0&&Number.isSafeInteger(p.messages_in_resolution)&&p.messages_in_resolution>=0){
    const tracked=Number.isSafeInteger(p.messages_tracked_for_chart)&&p.messages_tracked_for_chart>=p.messages_sent_overall?p.messages_tracked_for_chart:p.messages_sent_overall+p.messages_in_resolution;
    $('tinder-overall-count').textContent=`Odoslané celkovo: ${p.messages_sent_overall} · V riešení: ${p.messages_in_resolution}`;
@@ -322,9 +364,10 @@ async function readProgress(){
   $('tinder-meter').max=batchOk?(p.current_batch_total||1):1;$('tinder-meter').value=batchOk?p.current_batch_resolved:0;
   $('tinder-detail').textContent=batchOk?`Aktuálne v riešení: ${p.current_batch_in_resolution} · Z várky odoslané: ${p.current_batch_sent} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`:'Obnovenie aktuálnej várky zlyhalo.';
   $('tinder-eta').textContent=p.phase==='complete'?'Séria je dokončená.':p.phase==='paused'?'Odosielanie je pozastavené.':p.phase==='awaiting_operator'?'Odhad dokončenia: čaká na tvoje odpovede.':p.phase==='attention'?'Pokračovanie potrebuje kontrolu.':Number.isFinite(p.eta_seconds)&&p.eta_seconds>=0?`Odhad zostávajúceho času: približne ${Math.max(1,Math.ceil(p.eta_seconds/60))} min.`:'Odhad sa zobrazí po získaní aktuálneho tempa odosielania.';
- }catch{$('tinder-overall-eta').textContent='Celkový odhad nie je dostupný — údaje sa neobnovili.';$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Zobrazené počty môžu byť staršie.';$('tinder-eta').textContent='Skontroluj pripojenie a zopakuj synchronizáciu.'}
+ }catch{showAutomation(null);$('tinder-overall-count').textContent='Aktuálny počet nie je overený.';$('tinder-count').textContent='Aktuálny stav nie je overený.';$('tinder-overall-meter').value=0;$('tinder-meter').value=0;$('tinder-blocked').textContent='';$('tinder-overall-eta').textContent='Celkový odhad nie je dostupný — údaje sa neobnovili.';$('tinder-detail').textContent='Obnovenie priebehu zlyhalo alebo sú údaje staršie než 2 minúty.';$('tinder-eta').textContent='Skontroluj pripojenie MacBooku a zopakuj synchronizáciu.'}
 }
-async function refresh(){try{const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json'));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}finally{if(token){await loadProgress();if(token){await loadWhatsAppNames();await loadConversationIndex();}}}}
+async function inactiveRequests(){try{const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content);if(data.schema_version===1&&Array.isArray(data.inactive_ids)&&data.inactive_ids.length<=10000&&data.inactive_ids.every(id=>UUID.test(id)))return new Set(data.inactive_ids)}catch{}return new Set()}
+async function refresh(){try{const inactive=await inactiveRequests();const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push(previous);continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`);next.push({sha:file.sha,record:await validate(decode(file.content),id)})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}finally{if(token){await loadProgress();if(token){await loadWhatsAppNames();await loadConversationIndex();}}}}
 async function decide(item,outcome,comment='',permission=null){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){
  if(working||!token)return;
@@ -369,8 +412,8 @@ $('refresh').onclick=async()=>{
  }catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;button.disabled=false;render()}
 };
-$('disconnect').onclick=()=>{forgetPairing();resetConversations(true);token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
-window.addEventListener('pagehide',()=>{rememberConversationWork();resetConversations();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
+$('disconnect').onclick=()=>{showAutomation(null);forgetPairing();resetConversations(true);token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
+window.addEventListener('pagehide',()=>{showAutomation(null);rememberConversationWork();resetConversations();token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('bridge-token').value='';$('connect').hidden=false;$('disconnect').hidden=true});
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
