@@ -105,6 +105,10 @@ Multiple timers that call overlapping bridge functions amplify idle GitHub traff
 
 Publish progress and automation documents only when their semantic state changes. Do not include ticking fields such as backend check time or elapsed waiting seconds in the equality-controlled payload; clients derive elapsed time from the stable `waiting_since` value. Keep a local, locked transport counter grouped by actor, method, and normalized endpoint so unexpected consumers and rate-limit pressure are measurable without recording credentials or private content.
 
+The visible iPhone client must refresh the complete read-only private projection once per minute: active request status, request cards, progress, WhatsApp grouping and the manual-conversation index. A progress-only timer leaves new manual contacts and active questions invisible until a page visibility change or explicit tap; this caused the 2026-10-24 “app does not synchronize” report. The single guarded timer skips work while another operation runs, while hidden/offline, or during a GitHub rate-limit pause. It never submits drafts or decisions.
+
+Persisted GitHub pause timestamps are bounded to two hours and removed after expiry. A malformed value, device-clock artifact or obsolete far-future reset must not suppress all later refresh attempts indefinitely; the next minute tick resumes the normal guarded workflow.
+
 The mobile client may read the aggregate snapshot once per minute while visible. Explicit Refresh is the transactional user path: collect every non-empty answer, confirm the batch once, write each immutable request decision with SHA validation, then fetch the current request list and aggregate state. Background polling never submits drafts.
 
 Keep the active request directory bounded. Move terminal requests older than the retention window into monthly archive paths with one atomic Git tree commit, preserving their original blob hashes. Never archive unresolved requests. A non-fast-forward archive commit fails closed and is reconsidered from a fresh directory snapshot.

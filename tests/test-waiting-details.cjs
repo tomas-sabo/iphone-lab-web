@@ -32,8 +32,8 @@ assert(source.includes('p.waiting_count'),'client validates the full stalled-cha
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
 assert(source.includes('setInterval(refreshWaitingDurations,30000)'),'elapsed times refresh without waiting for the network');
 assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
-assert(source.includes('setInterval(pollProgress,60000)'),'automatic aggregate polling is limited to once per minute');
-assert(!source.includes('setInterval(pollProgress,15000)'),'legacy high-frequency polling is removed');
+assert(source.includes('setInterval(pollBridge,60000)'),'automatic full bridge polling is limited to once per minute');
+assert(!source.includes('setInterval(pollBridge,15000)'),'legacy high-frequency polling is removed');
 assert(source.includes('const pendingDrafts=[...items].filter'),'explicit Refresh batches every answered request before fetching state');
 assert(source.includes('Odoslať všetky vyplnené vyjadrenia'),'Refresh uses one confirmation for the complete answer batch');
 assert(source.includes("null,true);if(!sent)return"),'individual writes reuse the single batch confirmation');

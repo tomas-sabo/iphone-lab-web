@@ -7,8 +7,8 @@ let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus=
 const drafts=new Map(),groupOpen=new Map();
 let lastApiCall=0,lastRefresh=0;
 const RATE_KEY='iphone-lab-github-pause-until';
-function readPause(){try{return Number(localStorage.getItem(RATE_KEY))||0}catch{return 0}}
-function pauseUntil(t){try{localStorage.setItem(RATE_KEY,String(t))}catch{}}
+function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,now=Date.now();if(value<=now||value>now+7200000){localStorage.removeItem(RATE_KEY);return 0}return value}catch{return 0}}
+function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
 function forgetPairing(){try{localStorage.removeItem(PAIRING_KEY)}catch{}}
@@ -463,9 +463,16 @@ window.addEventListener('pageshow',restorePairing);
 window.addEventListener('online',()=>{if(!token&&document.visibilityState!=='hidden')restorePairing()});
 render();restorePairing();
 
-// Only aggregate progress polls automatically. Requests and decisions stay manual.
-function pollProgress(){if(working||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;if(!token)return restorePairing();return loadProgress()}
-setInterval(pollProgress,60000);setInterval(refreshWaitingDurations,30000);
+// Keep all read-only private projections current while the app is visible.
+// User drafts and decisions remain manual and are never submitted by this timer.
+async function pollBridge(){
+ if(working||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;
+ if(!token)return restorePairing();
+ working=true;render();
+ try{await refresh()}catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
+ finally{working=false;render()}
+}
+setInterval(pollBridge,60000);setInterval(refreshWaitingDurations,30000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working)return;
  if(!token){await restorePairing();return}
