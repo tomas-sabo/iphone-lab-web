@@ -113,6 +113,8 @@ The mobile client may read the complete read-only private projection once per mi
 
 Keep the active request directory bounded. Move terminal requests older than the retention window into monthly archive paths with one atomic Git tree commit, preserving their original blob hashes. Never archive unresolved requests. A non-fast-forward archive commit fails closed and is reconsidered from a fresh directory snapshot.
 
+An acknowledged operator comment is transport evidence, not proof that its meaning was resolved. Persist comment processing against the exact receipt UUID. If the producer does not replace an ambiguous comment with a concrete `needs_user` question within two minutes, publish one clarification request derived from the original question. Keep the approval origin unchanged, place the receipt UUID only in comment-processing metadata and question text, rely on the empty-draft send guard, and deduplicate by immutable scope and content hash.
+
 ### Overená navigácia na Tinder chat (2026-10-24)
 
 - Cestu ku konkrétnemu webovému chatu povoľ až po reálnom sanitizovanom proxy záchyte úspešného `GET`; overená šablóna je `https://tinder.com/app/messages/{match_id}`.
