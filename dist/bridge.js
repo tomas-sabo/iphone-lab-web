@@ -24,6 +24,7 @@ export async function validate(record,id){const r=record?.request;if(record?.sch
 function encode(v){let b='';for(const byte of encoder.encode(JSON.stringify(v)))b+=String.fromCharCode(byte);return btoa(b)}
 function decode(v){return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(v.replace(/\s/g,'')),c=>c.charCodeAt(0))))}
 async function api(path,options={}){
+ const authProbe=options.authProbe===true;if(authProbe){options={...options};delete options.authProbe}
  const pause=readPause();if(Date.now()<pause)throw Error(`GitHub má dočasný limit. Ďalší pokus po ${new Date(pause).toLocaleTimeString('sk-SK')}. Párovanie zostáva uložené.`);
  const mutation=options.method&&options.method!=='GET';
  const delay=lastApiCall+(mutation?1000:250)-Date.now();if(delay>0)await wait(delay);lastApiCall=Date.now();
@@ -33,9 +34,11 @@ async function api(path,options={}){
  if(!response.ok){
   if(response.status===401){showAutomation(null);forgetPairing();resetConversations(true);token='';$('connect').hidden=false;$('disconnect').hidden=true;items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';render();throw Error('Prístup bol odmietnutý. Pripoj bridge platným tokenom.')}
   if([403,429].includes(response.status)){
+   if(authProbe&&response.status===403&&remaining!=='0'&&!retry)throw Error('GitHub odmietol overenie (HTTP 403). Párovanie zostáva uložené; skontroluj dočasný limit alebo oprávnenie tokenu a skús znova.')
    const until=Math.max(Date.now()+Math.max(retry,60000),remaining==='0'?reset+5000:0);pauseUntil(until);
    throw Error(`GitHub dočasne odmietol požiadavku. Ďalší pokus po ${new Date(until).toLocaleTimeString('sk-SK')}. Párovanie zostáva uložené.`);
   }
+  if(authProbe&&response.status===404)throw Error('Súkromný bridge teraz nie je dostupný (HTTP 404). Párovanie zostáva uložené; skontroluj prístup a skús znova.')
   if([409,422].includes(response.status))throw Error('Požiadavka sa zmenila alebo už bola vybavená. Obnov zoznam.');
   const error=Error(`Bridge nie je dostupný (HTTP ${response.status}).`);error.status=response.status;throw error;
  }
@@ -426,13 +429,13 @@ async function connectBridge(candidate){
  working=true;token=candidate;$('connect-button').disabled=true;
  let verified=false;
  try{
-  const repo=await api('');
+  const repo=await api('',{authProbe:true});
   if(repo.private!==true||repo.full_name!==REPO){forgetPairing();throw Error('Bridge musí byť súkromný repozitár.')}
   verified=true;const remembered=rememberPairing();connected();
   await refresh();
   if(!remembered)message('Pripojené, ale zariadenie nedovolilo uložiť párovanie. Po zatvorení sa bude treba pripojiť znova.');
  }catch(e){
-  if(!verified){token='';items=[];const paired=Boolean(savedPairing());$('connect').hidden=paired;$('disconnect').hidden=!paired;render()}
+  if(!verified){token='';items=[];$('connect').hidden=false;$('disconnect').hidden=true;render()}
   message((!verified&&savedPairing()?'Párovanie je uložené. Spojenie teraz nie je dostupné; skús tlačidlo synchronizácie. ':'')+(e.message||'Pripojenie zlyhalo.'));
  }finally{working=false;$('connect-button').disabled=false;render()}
 }

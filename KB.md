@@ -147,3 +147,9 @@ Gate newly introduced receipt workflows with an explicit generation marker writt
 - `backend_api` nemení Tinder API na manuálne odoslanie a nesmie sa tak opisovať. Je to priamy backendový POST po nezmenených kontrolách identity príjemcu alebo skupiny, history hasha, aktuálneho návrhu, review/approval a stale kontextu.
 - Manuálne vlastníctvo má absolútnu prioritu pred transportným režimom: celý kontakt sa vyradí ešte pred čítacím preflightom aj POSTom. Terminálne alebo neisté stavy `sent`, `attempt_started`, `uncertain`, `transport_blocked` a `open_pending` sa pri zmene režimu automaticky neotvárajú ani neopakujú.
 - Tesne pred POST sa naďalej atomicky uloží `attempt_started`; HTTP 200 s ID nie je dôkaz doručenia a vyžaduje exact read-only history readback. Výsledok 401, 403 alebo 429 okamžite vypne backend. Žiadny z týchto stavov nepovoľuje automatický retry.
+
+### Obnova párovania bridge (2026-10-24)
+
+Uložený credential a aktívne spojenie sú odlišné stavy. Ak overenie po obnovení zlyhá ešte pred potvrdením súkromného repozitára, klient nesmie skryť pripájací formulár ani zobrazovať ovládanie „Zrušiť párovanie“ ako dôkaz aktívneho spojenia. Credential zostáva uložený pri lokálnom cooldown-e, výpadku siete a nejednoznačnom HTTP 403/404; zruší sa iba pri jednoznačnom HTTP 401, potvrdenom nesúlade identity súkromného repozitára alebo výslovnom odpojení používateľom.
+
+HTTP 403 bez hlavičky `Retry-After` alebo vyčerpanej primárnej rate-limit kvóty nie je dôkaz chybného oprávnenia: môže ísť aj o sekundárny GitHub limit. Taký výsledok sa nesmie premenovať na rate-limit ani ním vymazať párovanie. Pri preukázanom limite sa uloží ohraničený čas ďalšieho pokusu; pri nejednoznačnom odmietnutí klient zachová credential, ukáže presný HTTP stav a ponechá formulár na vedomé opätovné pripojenie. Regresný test musí pokryť 403 bez hlavičiek, 403 s vyčerpanou kvótou, cooldown obnovu a úspešné overenie privátneho repozitára.
