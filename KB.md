@@ -132,3 +132,10 @@ Keep the active request directory bounded. Move terminal requests older than the
 - Identifikátor, text, tokeny, hlavičky a websocket payload sa nesmú zapisovať do diagnostiky. Sanitizovaný výsledok môže obsahovať iba pevné šablóny trás, poradie, interval, typ dôkazu a výslovné `delivery_confirmed: false`.
 - Lokálny API executor nemá browserový/WebSocket aktuátor, ktorý by vedel sám vytvoriť tento dôkaz otvorenia. Runtime preto pred každým POST zlyhá bezpečne do `transport_blocked` s `automatic_retry: false`, pokiaľ nie je vložená implementácia pre-send brány s presnou identitou a najmenej 30-sekundovým intervalom. Read-only načítanie histórie nie je náhradou otvorenia webového chatu.
 - Pre-send brána uloží pred začiatkom crash-safe stav `open_pending`. Pád v tomto stave nemôže pokračovať POSTom ani automatickým retry. Až validný dôkaz vráti prípad do kontrolovaného stavu; tesne pred POST sa naďalej atomicky uloží `attempt_started`, takže neistý výsledok sa nikdy neposiela znova.
+
+### Explicitný backend API režim (2026-10-24)
+
+- Tomy následne priamo obnovil pôvodný transparentný backendový API transport. Konfigurácia musí mať výslovné `transport_mode: backend_api`; tento režim nepoužíva syntetický web-open dôkaz ani 30-sekundovú web policy. Neznámy alebo chýbajúci transportný režim zostáva fail-closed.
+- `backend_api` nemení Tinder API na manuálne odoslanie a nesmie sa tak opisovať. Je to priamy backendový POST po nezmenených kontrolách identity príjemcu alebo skupiny, history hasha, aktuálneho návrhu, review/approval a stale kontextu.
+- Manuálne vlastníctvo má absolútnu prioritu pred transportným režimom: celý kontakt sa vyradí ešte pred čítacím preflightom aj POSTom. Terminálne alebo neisté stavy `sent`, `attempt_started`, `uncertain`, `transport_blocked` a `open_pending` sa pri zmene režimu automaticky neotvárajú ani neopakujú.
+- Tesne pred POST sa naďalej atomicky uloží `attempt_started`; HTTP 200 s ID nie je dôkaz doručenia a vyžaduje exact read-only history readback. Výsledok 401, 403 alebo 429 okamžite vypne backend. Žiadny z týchto stavov nepovoľuje automatický retry.
