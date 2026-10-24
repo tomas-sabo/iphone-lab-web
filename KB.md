@@ -109,7 +109,7 @@ The visible iPhone client must refresh the complete read-only private projection
 
 Persisted GitHub pause timestamps are bounded to two hours and removed after expiry. A malformed value, device-clock artifact or obsolete far-future reset must not suppress all later refresh attempts indefinitely; the next minute tick resumes the normal guarded workflow.
 
-The mobile client may read the aggregate snapshot once per minute while visible. Explicit Refresh is the transactional user path: collect every non-empty answer, confirm the batch once, write each immutable request decision with SHA validation, then fetch the current request list and aggregate state. Background polling never submits drafts.
+The mobile client may read the complete read-only private projection once per minute while visible. Explicit Refresh is the transactional user path: collect every non-empty answer, confirm the batch once, write each immutable request decision with SHA validation, then fetch the current request list and aggregate state. Background polling never submits drafts.
 
 Keep the active request directory bounded. Move terminal requests older than the retention window into monthly archive paths with one atomic Git tree commit, preserving their original blob hashes. Never archive unresolved requests. A non-fast-forward archive commit fails closed and is reconsidered from a fresh directory snapshot.
 
