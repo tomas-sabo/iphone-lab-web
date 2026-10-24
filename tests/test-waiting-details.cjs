@@ -3,7 +3,7 @@ const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 const start=source.indexOf('const WAITING_CASE=');
 const end=source.indexOf('function statisticsPointer',start);
 assert(start>=0&&end>start,'waiting-detail helpers are present');
-const context={Date,Error,Number,Array,String,Math};
+const context={Date,Error,Number,Array,String,Math,URL};
 vm.createContext(context);
 vm.runInContext(source.slice(start,end).replaceAll('export function','function'),context);
 const now=Date.parse('2026-10-23T14:30:00Z');
@@ -11,6 +11,9 @@ const valid=[{case_id:'case-59808652bdb90ad9f14eddb3',name:' Dasha ',reason:' Ch
 const rows=context.validateWaitingDetails(valid);
 assert.equal(rows.length,1);assert.equal(rows[0].name,'Dasha');assert.equal(rows[0].reason,'Chýba deň a mesiac narodenín.');
 assert.equal(context.validateWaitingDetails(undefined),null);
+const linked=context.validateWaitingDetails([{...valid[0],open_url:'https://tinder.com/app/messages/match_Abc-123'}]);
+assert.equal(linked[0].open_url,'https://tinder.com/app/messages/match_Abc-123');
+for(const open_url of ['http://tinder.com/app/messages/abc','https://evil.example/app/messages/abc','https://tinder.com/app/messages/../abc','https://tinder.com/app/messages/abc?q=1'])assert.throws(()=>context.validateWaitingDetails([{...valid[0],open_url}]));
 const awaiting=context.validateWaitingDetails([{...valid[0],state:'awaiting_reply',reason:'Čakáme na jej správu.'}]);
 assert.equal(awaiting[0].state,'awaiting_reply');
 assert.equal(context.waitingDuration('2026-10-23T14:29:50Z',now),'práve teraz');
@@ -23,6 +26,7 @@ assert(source.includes('validateWaitingDetails(p.awaiting_details)'),'client con
 assert(source.includes('p.waiting_count'),'client validates the full stalled-chat count rather than only operator questions');
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
 assert(source.includes('setInterval(refreshWaitingDurations,30000)'),'elapsed times refresh without waiting for the network');
+assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
 assert(source.includes('setInterval(pollProgress,60000)'),'automatic aggregate polling is limited to once per minute');
 assert(!source.includes('setInterval(pollProgress,15000)'),'legacy high-frequency polling is removed');
 assert(source.includes('const pendingDrafts=[...items].filter'),'explicit Refresh batches every answered request before fetching state');

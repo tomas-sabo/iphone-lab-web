@@ -108,3 +108,10 @@ Publish progress and automation documents only when their semantic state changes
 The mobile client may read the aggregate snapshot once per minute while visible. Explicit Refresh is the transactional user path: collect every non-empty answer, confirm the batch once, write each immutable request decision with SHA validation, then fetch the current request list and aggregate state. Background polling never submits drafts.
 
 Keep the active request directory bounded. Move terminal requests older than the retention window into monthly archive paths with one atomic Git tree commit, preserving their original blob hashes. Never archive unresolved requests. A non-fast-forward archive commit fails closed and is reconsidered from a fresh directory snapshot.
+
+### Overená navigácia na Tinder chat (2026-10-24)
+
+- Cestu ku konkrétnemu webovému chatu povoľ až po reálnom sanitizovanom proxy záchyte úspešného `GET`; overená šablóna je `https://tinder.com/app/messages/{match_id}`.
+- Konkrétny identifikátor patrí iba do autentifikovaného súkromného progress payloadu. Verejný release obsahuje iba validátor šablóny a nikdy konkrétny identifikátor, token ani hlavičky.
+- Klient prijme výhradne HTTPS host `tinder.com`, presnú cestu `/app/messages/<bezpečný-identifikátor>`, bez portu, query alebo fragmentu, a otvorí ju s izolovaným `noopener noreferrer`.
+- Apple AASA povoľuje natívne universal links iba pod `/deeplink/*`; preto túto cestu označuj ako otvorenie chatu v Tinderi, nie ako garantovaný natívny deep link.

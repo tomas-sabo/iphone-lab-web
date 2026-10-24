@@ -116,7 +116,8 @@ export function validateWaitingDetails(value){
  return value.map(row=>{
   if(!row||!WAITING_CASE.test(row.case_id)||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000||!WAITING_STATES.has(row.state)||typeof row.waiting_since!=='string')throw Error('Neplatný čakajúci chat.');
   const since=Date.parse(row.waiting_since);if(!Number.isFinite(since)||since>Date.now()+300000)throw Error('Neplatný čas čakajúceho chatu.');
-  return {case_id:row.case_id,name:row.name.trim(),reason:row.reason.trim(),state:row.state,waiting_since:row.waiting_since};
+  let open_url=null;if(row.open_url!==undefined){if(typeof row.open_url!=='string'||row.open_url.length>320)throw Error('Neplatný odkaz na chat.');const u=new URL(row.open_url);if(u.protocol!=='https:'||u.hostname!=='tinder.com'||u.username||u.password||u.port||u.search||u.hash||!/^\/app\/messages\/[A-Za-z0-9_-]{3,160}$/.test(u.pathname))throw Error('Neplatný odkaz na chat.');open_url=u.href}
+  return {case_id:row.case_id,name:row.name.trim(),reason:row.reason.trim(),state:row.state,waiting_since:row.waiting_since,...(open_url?{open_url}:{})};
  });
 }
 export function waitingDuration(value,now=Date.now()){
@@ -134,7 +135,7 @@ function renderWaiting(details,aggregate){
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
  count.textContent=String(details.length);status.textContent=details.length?`${details.length} ${details.length===1?'chat stojí alebo čaká':'chatov stojí alebo čaká'} na ďalší krok.`:'Žiadny chat nečaká na tvoju odpoveď.';
- for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));list.append(card)}
+ for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));if(row.open_url){const link=element('a','Otvoriť chat v Tinderi','waiting-chat-open');link.href=row.open_url;link.target='_blank';link.rel='noopener noreferrer';card.append(link)}list.append(card)}
 }
 
 function statisticsPointer(data){
