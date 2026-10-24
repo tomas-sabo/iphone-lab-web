@@ -3,6 +3,7 @@ const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 function block(from,to){const start=source.indexOf(from),end=source.indexOf(to,start);assert(start>=0&&end>start,`${from} implementation exists`);return source.slice(start,end)}
 const implementation=`
 const REPO='tomas-sabo/bridge',API='https://api.github.com/repos/'+REPO,RATE_KEY='iphone-lab-github-pause-until';
+let refreshController=null;
 let token='',items=[],working=false,whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='',lastApiCall=0;
 const $=id=>elements[id],wait=async()=>{},PAIRING_KEY='iphone-lab-bridge-pairing-v1';
 function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,now=Date.now();if(value<=now||value>now+7200000){localStorage.removeItem(RATE_KEY);return 0}return value}catch{return 0}}
