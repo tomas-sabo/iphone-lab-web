@@ -1,5 +1,18 @@
 # Local troubleshooting notes
 
+## Každú úpravu aplikácie kontroluje Architekt
+
+Pri každej zmene operátorskej aplikácie alebo jej synchronizačného kontraktu
+treba pred publikovaním požiadať Architekta o kontrolu návrhu, kompatibility,
+testov a výsledného release balíka. Kontrola nenahrádza testy ani hashové
+overenie publikovaného vydania.
+
+Pri synchronizácii dotazov aplikácia zobrazuje iba aktuálne, nezodpovedané a
+najnovšie požiadavky pre daný logický prípad. Rozhodnuté a staršie duplicitné
+snímky zostávajú v audite, ale nie v aktívnom zozname. Ak aplikácia nevie
+overiť `request-status.json`, zoznam musí zlyhať bezpečne a nesmie zobraziť
+historické požiadavky ako aktuálne.
+
 ## A pending-action list can hide a still-blocked workflow
 
 A UI that reads only undecided operator requests is not a reliable view of workflows waiting for user input. A request may already contain an approval or comment while its underlying case still remains blocked because the supplied answer was incomplete or only authorized further preparation.
