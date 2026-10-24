@@ -11,6 +11,8 @@ const valid=[{case_id:'case-59808652bdb90ad9f14eddb3',name:' Dasha ',reason:' Ch
 const rows=context.validateWaitingDetails(valid);
 assert.equal(rows.length,1);assert.equal(rows[0].name,'Dasha');assert.equal(rows[0].reason,'Chýba deň a mesiac narodenín.');
 assert.equal(context.validateWaitingDetails(undefined),null);
+const awaiting=context.validateWaitingDetails([{...valid[0],state:'awaiting_reply',reason:'Čakáme na jej správu.'}]);
+assert.equal(awaiting[0].state,'awaiting_reply');
 assert.equal(context.waitingDuration('2026-10-23T14:29:50Z',now),'práve teraz');
 assert.equal(context.waitingDuration('2026-10-23T13:25:00Z',now),'1 h 5 min');
 assert.equal(context.waitingDuration('2026-10-21T11:30:00Z',now),'2 d 3 h');

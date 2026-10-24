@@ -109,7 +109,7 @@ let statisticsManifest=null,statisticsData=null,statisticsLoading=false,statisti
 function resetStatistics(){resetOriginalStatistics();statisticsManifest=null;statisticsData=null;$('statistics-body').replaceChildren();$('statistics-status').textContent='Pripoj bridge na načítanie súkromného reportu.';clearWaiting()}
 const SHA256=/^[a-f0-9]{64}$/;
 const WAITING_CASE=/^case-[a-f0-9]{24}$/;
-const WAITING_STATES=new Set(['needs_user','uncertain','attempt_started','stale','prepared','dispatched']);
+const WAITING_STATES=new Set(['needs_user','uncertain','attempt_started','stale','prepared','dispatched','awaiting_reply']);
 export function validateWaitingDetails(value){
  if(value===undefined)return null;
  if(!Array.isArray(value)||value.length>100)throw Error('Neplatné detaily čakajúcich chatov.');
