@@ -9,6 +9,8 @@ vm.runInContext((uuid+urlHelper+statusHelper).replaceAll('export function','func
 const id='00000000-0000-0000-0000-000000000001',url='https://tinder.com/app/messages/match_Abc-123';
 const old=context.validateRequestStatus({schema_version:1,inactive_ids:[]});assert.equal(old.links.size,0,'old private snapshot remains compatible without exposing a link');
 const valid=context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:url}});assert.equal(valid.links.get(id),url);
+const action=context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:url},chat_actions:{[id]:{open_url:url,draft:'Aktuálny návrh'}}});assert.equal(action.actions.get(id).draft,'Aktuálny návrh');
+assert.throws(()=>context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:url},chat_actions:{[id]:{open_url:'https://tinder.com/app/messages/other',draft:'Návrh'}}}));
 for(const bad of ['http://tinder.com/app/messages/abc','https://evil.example/app/messages/abc','https://tinder.com/app/messages/abc?q=1','https://tinder.com:444/app/messages/abc','https://tinder.com/app/messages/../abc'])assert.throws(()=>context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:bad}}));
 assert(source.includes("item.open_url&&(source==='tinder'||source==='rafi')"),'only Tinder and Tinder-bound Rafi cards may render the chat link');
 assert(source.includes("link.rel='noopener noreferrer'"),'request link isolates its opener');

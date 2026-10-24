@@ -8,6 +8,10 @@ for(const bad of ['https://evil.example/app/messages/abc','https://tinder.com/ap
 assert(source.includes("contactEntry(name,true)"),'only the Manual section requests a Tinder link');
 assert(source.includes("conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1)"),'ambiguous names fail closed');
 assert(source.includes("link.target='_blank';link.rel='noopener noreferrer'"),'manual Tinder links isolate their opener');
-assert(source.includes("open_url:c.open_url===undefined?null:validateTinderChatUrl(c.open_url)"),'private index URLs are validated');
+assert(source.includes("const open_url=c.open_url===undefined?null:validateTinderChatUrl(c.open_url)"),'private index URLs are validated');
 assert(!source.includes("localStorage.setItem(c.open_url"),'manual Tinder links are not persisted');
-console.log('Manual Tinder links are validated, isolated, memory-only and fail closed.');
+assert(source.includes("draft.get('snapshot_sha256')")||source.includes("c.draft!==undefined"),'draft presence is validated');
+const copyHelper=source.match(/async function copyDraftAndOpen\(.*\n/)[0];
+const notices=[];context.window={open:(...args)=>notices.push(args)};context.navigator={clipboard:{writeText:()=>Promise.reject(Error('denied'))}};context.message=v=>notices.push(v);
+vm.runInContext(copyHelper,context);
+(async()=>{await context.copyDraftAndOpen('https://tinder.com/app/messages/match_Abc-123','Bezpečný návrh');assert.equal(notices[0][0],'https://tinder.com/app/messages/match_Abc-123');assert.equal(notices[0][1],'_blank');assert.equal(notices[0][2],'noopener,noreferrer');assert.match(notices[1],/nepodarilo skopírovať/);console.log('Manual Tinder links and user-gesture copy flow fail closed.')})().catch(e=>{console.error(e);process.exit(1)});
