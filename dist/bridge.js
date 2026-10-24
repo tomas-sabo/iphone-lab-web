@@ -421,14 +421,14 @@ async function connectBridge(candidate){
   await refresh();
   if(!remembered)message('Pripojené, ale zariadenie nedovolilo uložiť párovanie. Po zatvorení sa bude treba pripojiť znova.');
  }catch(e){
-  if(!verified){token='';items=[];$('connect').hidden=false;$('disconnect').hidden=true;render()}
-  message(e.message||'Pripojenie zlyhalo.');
+  if(!verified){token='';items=[];const paired=Boolean(savedPairing());$('connect').hidden=paired;$('disconnect').hidden=!paired;render()}
+  message((!verified&&savedPairing()?'Párovanie je uložené. Spojenie teraz nie je dostupné; skús tlačidlo synchronizácie. ':'')+(e.message||'Pripojenie zlyhalo.'));
  }finally{working=false;$('connect-button').disabled=false;render()}
 }
 $('connect').onsubmit=async e=>{e.preventDefault();const candidate=$('bridge-token').value.trim();$('bridge-token').value='';await connectBridge(candidate)};
 $('refresh').onclick=async()=>{
  if(working)return;
- if(!token){message('Najprv pripoj súkromný bridge.');return}
+ if(!token){if(savedPairing()){await restorePairing();return}message('Najprv pripoj súkromný bridge.');return}
  const button=$('refresh');button.disabled=true;let submitted=false;
  try{
   // Only explicit synchronization sends unsent text, using the same per-request confirmation and SHA validation.
@@ -449,10 +449,11 @@ window.addEventListener('pagehide',()=>{showAutomation(null);rememberConversatio
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
 window.addEventListener('pageshow',restorePairing);
+window.addEventListener('online',()=>{if(!token&&document.visibilityState!=='hidden')restorePairing()});
 render();restorePairing();
 
 // Only aggregate progress polls automatically. Requests and decisions stay manual.
-function pollProgress(){if(token&&!working&&document.visibilityState!=='hidden'&&Date.now()>=readPause())return loadProgress()}
+function pollProgress(){if(working||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;if(!token)return restorePairing();return loadProgress()}
 setInterval(pollProgress,60000);setInterval(refreshWaitingDurations,30000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working)return;
