@@ -115,6 +115,8 @@ Keep the active request directory bounded. Move terminal requests older than the
 - Konkrétny identifikátor patrí iba do autentifikovaného súkromného progress payloadu. Verejný release obsahuje iba validátor šablóny a nikdy konkrétny identifikátor, token ani hlavičky.
 - Klient prijme výhradne HTTPS host `tinder.com`, presnú cestu `/app/messages/<bezpečný-identifikátor>`, bez portu, query alebo fragmentu, a otvorí ju s izolovaným `noopener noreferrer`.
 - Apple AASA povoľuje natívne universal links iba pod `/deeplink/*`; preto túto cestu označuj ako otvorenie chatu v Tinderi, nie ako garantovaný natívny deep link.
+- Karta operátorskej požiadavky môže dostať chat link iba cez autentifikovaný privátny `request-status.json`, keď aktívny request zo zdroja `tinder` alebo `rafi` jednoznačne odkazuje na lokálny `tinder_case`/`tinder_verification` a jeho aktuálny `match_id`. Link nie je súčasťou podpísaného requestu, takže nemení jeho digest ani rozhodovací kontrakt.
+- Klient musí mapovanie opäť validovať: UUID requestu, HTTPS, presný host `tinder.com`, cesta `/app/messages/<ID>`, bezpečné ID a žiadny port, query ani fragment. Link sa drží iba v pamäti, zobrazuje sa hneď pod textom „Čo schvaľuješ“ a nikdy sa nezobrazuje pre obyčajný Rafi request alebo iný zdroj.
 
 ### Policy pred automatickým Tinder odoslaním (2026-10-24)
 
