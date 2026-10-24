@@ -16,6 +16,10 @@ assert.equal(linked[0].open_url,'https://tinder.com/app/messages/match_Abc-123')
 for(const open_url of ['http://tinder.com/app/messages/abc','https://evil.example/app/messages/abc','https://tinder.com/app/messages/../abc','https://tinder.com/app/messages/abc?q=1'])assert.throws(()=>context.validateWaitingDetails([{...valid[0],open_url}]));
 const awaiting=context.validateWaitingDetails([{...valid[0],state:'awaiting_reply',reason:'Čakáme na jej správu.'}]);
 assert.equal(awaiting[0].state,'awaiting_reply');
+for(const state of ['rejected','transport_blocked','open_pending']){
+ const blocked=context.validateWaitingDetails([{...valid[0],state,reason:'Bezpečnostne zastavené pred odoslaním.'}]);
+ assert.equal(blocked[0].state,state);
+}
 assert.equal(context.waitingDuration('2026-10-23T14:29:50Z',now),'práve teraz');
 assert.equal(context.waitingDuration('2026-10-23T13:25:00Z',now),'1 h 5 min');
 assert.equal(context.waitingDuration('2026-10-21T11:30:00Z',now),'2 d 3 h');
