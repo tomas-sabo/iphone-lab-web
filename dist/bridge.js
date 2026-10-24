@@ -44,7 +44,9 @@ async function api(path,options={}){
 function message(text){$('bridge-status').textContent=text}
 function element(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e}
 export function validateTinderChatUrl(value){if(typeof value!=='string'||value.length>320)throw Error('Neplatný odkaz na chat.');const u=new URL(value);if(u.protocol!=='https:'||u.hostname!=='tinder.com'||u.username||u.password||u.port||u.search||u.hash||!/^\/app\/messages\/[A-Za-z0-9_-]{3,160}$/.test(u.pathname))throw Error('Neplatný odkaz na chat.');return u.href}
-async function copyDraftAndOpen(url,draft){url=validateTinderChatUrl(url);if(typeof draft!=='string'||!draft.trim()||draft.length>1500)throw Error('Návrh nie je aktuálny.');window.open(url,'_blank','noopener,noreferrer');try{await navigator.clipboard.writeText(draft);message('Návrh je skopírovaný. Vlož ho do Tinderu a odoslanie potvrď manuálne.')}catch{message('Chat sa otvoril, ale návrh sa nepodarilo skopírovať. Skopíruj ho z karty ručne.')}}
+async function copyDraft(draft){if(typeof draft!=='string'||!draft.trim()||draft.length>1500)throw Error('Návrh nie je aktuálny.');try{await navigator.clipboard.writeText(draft);message('Návrh je skopírovaný. Vlož ho do Tinderu a odoslanie potvrď manuálne.')}catch{message('Návrh sa nepodarilo skopírovať. Skopíruj ho z karty ručne.')}}
+function appendTinderActions(parent,url,draft=null){url=validateTinderChatUrl(url);const link=element('a','Otvoriť chat v Tinderi','tinder-chat-open');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);if(draft){const copy=element('button','Skopírovať návrh','secondary tinder-draft-copy');copy.type='button';copy.onclick=()=>copyDraft(draft);parent.append(copy)}}
+export function manualContactNames(manual,index){return [...new Set([...manual,...index.map(c=>c.name)])]}
 function syncBadge(){const count=[...drafts.values()].filter(v=>v.trim()).length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
 function render(){
  syncBadge();$('requests').replaceChildren();
@@ -81,7 +83,7 @@ function render(){
    card.append(element('span',name,'source'));
    if(!done)card.append(element('h3',r.title,'request-title'));
    card.append(element('p',r.body,'context'),element('h4','Čo schvaľuješ'),element('p',r.proposed_action,'action'));
-   if(item.open_url&&(source==='tinder'||source==='rafi')){if(item.draft){const open=element('button','Skopírovať návrh a otvoriť chat','button-link tinder-request-open');open.type='button';open.onclick=()=>copyDraftAndOpen(item.open_url,item.draft);card.append(open)}else{const link=element('a','Otvoriť chat v Tinderi','button-link tinder-request-open');link.href=item.open_url;link.target='_blank';link.rel='noopener noreferrer';card.append(link)}}
+   if(item.open_url&&(source==='tinder'||source==='rafi'))appendTinderActions(card,item.open_url,item.draft);
    card.append(element('small',`Referencia: ${r.context_ref} · Platí do ${new Date(r.expires_at).toLocaleString('sk-SK')}`));
    if(d){
     card.append(element('p',d.revoked_at?'Trvalé povolenie odvolané':d.permission==='always'?'Povolené trvalo':({approved:'Schválené ✓',rejected:'Zamietnuté',commented:'Vyjadrenie odoslané'})[d.outcome],'decision'));
@@ -101,7 +103,7 @@ function render(){
   }
  }
 
- const manualNames=[...new Set([...whatsappManual,...conversationIndex.map(c=>c.name)])];
+ const manualNames=manualContactNames(whatsappManual,conversationIndex);
  const manual=element('details',undefined,'request-group manual-contacts');manual.open=groupOpen.get('manual-contacts')||false;
  const title=element('summary',`Manuálne (${manualNames.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
  const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
@@ -139,7 +141,7 @@ function renderWaiting(details,aggregate){
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
  count.textContent=String(details.length);status.textContent=details.length?`${details.length} ${details.length===1?'chat stojí alebo čaká':'chatov stojí alebo čaká'} na ďalší krok.`:'Žiadny chat nečaká na tvoju odpoveď.';
- for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));if(row.open_url){const link=element('a','Otvoriť chat v Tinderi','waiting-chat-open');link.href=row.open_url;link.target='_blank';link.rel='noopener noreferrer';card.append(link)}list.append(card)}
+ for(const row of details){const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));if(row.open_url)appendTinderActions(card,row.open_url);list.append(card)}
 }
 
 function statisticsPointer(data){
@@ -248,6 +250,7 @@ function showConversation(record,sha){
  const history=element('details',undefined,'conversation-history');history.append(element('summary','Celá dostupná história'));
  const list=element('ol');for(const m of [...record.snapshot.history].sort((a,b)=>Date.parse(a.sent_at)-Date.parse(b.sent_at))){const row=element('li');row.append(element('strong',m.sender==='user'?'Tomy':record.snapshot.profile.name||'Kontakt'),element('small',new Date(m.sent_at).toLocaleString('sk-SK')),element('p',m.text,'context'));list.append(row)}history.append(list);body.append(history);
  const proposal=element('details',undefined,'conversation-proposal');proposal.append(element('summary',record.rafi_draft.status==='stale'?'Predošlý návrh — vyžaduje prepracovanie':'Návrh Rafiho — neodoslaný'),element('p',record.rafi_draft.text,'context'),element('small','Návrh na tvoju úpravu. Osobné tvrdenia treba overiť; text nie je schválená správa ani záväzok stretnutia.'));body.append(proposal);
+ const mapped=conversationIndex.find(c=>c.id===record.id&&c.open_url);if(mapped)appendTinderActions(body,mapped.open_url,mapped.draft);
  const work=conversationWork()[record.id];
  const label=element('label','Tvoj pracovný text — neodoslaný');label.htmlFor='conversation-text';const input=element('textarea');input.id=label.htmlFor;input.rows=6;input.maxLength=10000;input.value=work?.text??record.operator_text;input.oninput=rememberConversationWork;
  const noteLabel=element('label','Nové informácie alebo poznámky pre Rafiho');noteLabel.htmlFor='conversation-notes';const notes=element('textarea');notes.id=noteLabel.htmlFor;notes.rows=4;notes.maxLength=20000;notes.value=work?.notes??record.operator_notes;notes.oninput=rememberConversationWork;
@@ -319,7 +322,7 @@ function contactEntry(name,manual=false){
  button.oncontextmenu=e=>{e.preventDefault();cancel();showManualChoice(name)};
  button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();detail?openConversation(detail.id):showManualChoice(name)}};
  row.append(button);
- if(manual){const mapped=conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1){if(mapped[0].draft){const open=element('button','Skopírovať návrh a otvoriť chat','manual-tinder-open');open.type='button';open.onclick=()=>copyDraftAndOpen(mapped[0].open_url,mapped[0].draft);row.append(open)}else{const link=element('a','Otvoriť chat v Tinderi','manual-tinder-open');link.href=mapped[0].open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link)}}}
+ if(manual){const mapped=conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1)appendTinderActions(row,mapped[0].open_url,mapped[0].draft)}
  return row;
 }
 async function saveManualChoice(manual){
