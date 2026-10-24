@@ -115,3 +115,10 @@ Keep the active request directory bounded. Move terminal requests older than the
 - Konkrétny identifikátor patrí iba do autentifikovaného súkromného progress payloadu. Verejný release obsahuje iba validátor šablóny a nikdy konkrétny identifikátor, token ani hlavičky.
 - Klient prijme výhradne HTTPS host `tinder.com`, presnú cestu `/app/messages/<bezpečný-identifikátor>`, bez portu, query alebo fragmentu, a otvorí ju s izolovaným `noopener noreferrer`.
 - Apple AASA povoľuje natívne universal links iba pod `/deeplink/*`; preto túto cestu označuj ako otvorenie chatu v Tinderi, nie ako garantovaný natívny deep link.
+
+### Policy pred automatickým Tinder odoslaním (2026-10-24)
+
+- **Používateľská bezpečnostná policy:** pred každým budúcim automatickým odoslaním najprv otvoriť presne overenú trasu cieľového chatu, počkať najmenej 30 sekúnd a až potom vykonať odosielaciu cestu. Tridsať sekúnd je výslovná policy používateľa; nejde o zachytenú požiadavku protokolu Tinder.
+- **Overený transportný fakt:** samostatný sanitizovaný záchyt potvrdil webovú trasu otvorenia `https://tinder.com/app/messages/{match_id}`.
+- **Zatiaľ neoverené:** test s otvorením nesprávneho a následne správneho chatu nevytvoril cez scoped proxy dve jednoznačne korelovateľné otvorenia ani zachytiteľný send request. Viditeľné boli iba statické a analytické požiadavky. Presnú send route a jej poradie preto nemožno vyhlásiť za potvrdený kontrakt.
+- Automatizácia musí zlyhať bezpečne, ak nevie v pamäti preukázať, že úspešný send patrí poslednému úspešne otvorenému identifikátoru. Identifikátor, text, tokeny a hlavičky sa nesmú zapisovať do diagnostiky. Bez jednoznačného záchytu sa send kontrakt nezavádza a autopilot ostáva vypnutý.
