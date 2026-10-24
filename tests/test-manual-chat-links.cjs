@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
+const context={URL,Error};vm.createContext(context);
+const helper=source.match(/export function validateTinderChatUrl\(.*\n/)[0];
+vm.runInContext(helper.replace('export function','function'),context);
+assert.equal(context.validateTinderChatUrl('https://tinder.com/app/messages/match_Abc-123'),'https://tinder.com/app/messages/match_Abc-123');
+for(const bad of ['https://evil.example/app/messages/abc','https://tinder.com/app/messages/abc?q=1','https://tinder.com:444/app/messages/abc','https://tinder.com/app/messages/a/b'])assert.throws(()=>context.validateTinderChatUrl(bad));
+assert(source.includes("contactEntry(name,true)"),'only the Manual section requests a Tinder link');
+assert(source.includes("conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1)"),'ambiguous names fail closed');
+assert(source.includes("link.target='_blank';link.rel='noopener noreferrer'"),'manual Tinder links isolate their opener');
+assert(source.includes("open_url:c.open_url===undefined?null:validateTinderChatUrl(c.open_url)"),'private index URLs are validated');
+assert(!source.includes("localStorage.setItem(c.open_url"),'manual Tinder links are not persisted');
+console.log('Manual Tinder links are validated, isolated, memory-only and fail closed.');

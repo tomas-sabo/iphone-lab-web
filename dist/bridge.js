@@ -103,7 +103,7 @@ function render(){
  const manualNames=[...new Set([...whatsappManual,...conversationIndex.map(c=>c.name)])];
  const manual=element('details',undefined,'request-group manual-contacts');manual.open=groupOpen.get('manual-contacts')||false;
  const title=element('summary',`Manuálne (${manualNames.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
- const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name));
+ const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
  manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
 }
@@ -222,7 +222,7 @@ async function loadConversationIndex(){
  try{
   const file=await api('/contents/operator/conversations/index.json?ref=main'),data=decode(file.content);
   if(data.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>20||!data.contacts.every(c=>UUID.test(c.id)&&typeof c.name==='string'&&c.name.length<=160&&['user','rafi'].includes(c.owner)))throw Error('Invalid private index');
-  conversationIndex=data.contacts;conversationStatus='';
+  conversationIndex=data.contacts.map(c=>({...c,open_url:c.open_url===undefined?null:validateTinderChatUrl(c.open_url)}));conversationStatus='';
  }catch(e){if(e.status===404)conversationIndex=[];else conversationStatus='Detail manuálnych komunikácií sa neobnovil. Zopakuj synchronizáciu.'}
  render();
 }
@@ -307,7 +307,7 @@ function showManualChoice(name){
  if(working||!token||!whatsappNames.includes(name)||$('manual-dialog').open)return;
  selectedManualContact=name;$('manual-contact-name').textContent=name;$('manual-dialog').showModal();
 }
-function contactEntry(name){
+function contactEntry(name,manual=false){
  const row=element('li'),button=element('button',name,'contact-name');const detail=conversationIndex.find(c=>c.name===name);if(detail)button.onclick=()=>openConversation(detail.id);button.type='button';button.disabled=working;
  button.setAttribute?.('aria-label',`${name} — podržať pre voľbu Manuálne`);
  let hold=null,start=null;
@@ -317,7 +317,9 @@ function contactEntry(name){
  button.onpointerup=cancel;button.onpointercancel=cancel;button.onpointerleave=cancel;
  button.oncontextmenu=e=>{e.preventDefault();cancel();showManualChoice(name)};
  button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();detail?openConversation(detail.id):showManualChoice(name)}};
- row.append(button);return row;
+ row.append(button);
+ if(manual){const mapped=conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1){const link=element('a','Otvoriť chat v Tinderi','manual-tinder-open');link.href=mapped[0].open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link)}}
+ return row;
 }
 async function saveManualChoice(manual){
  const name=selectedManualContact;$('manual-dialog').close();selectedManualContact=null;

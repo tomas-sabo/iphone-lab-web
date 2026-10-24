@@ -117,6 +117,7 @@ Keep the active request directory bounded. Move terminal requests older than the
 - Apple AASA povoľuje natívne universal links iba pod `/deeplink/*`; preto túto cestu označuj ako otvorenie chatu v Tinderi, nie ako garantovaný natívny deep link.
 - Karta operátorskej požiadavky môže dostať chat link iba cez autentifikovaný privátny `request-status.json`, keď aktívny request zo zdroja `tinder` alebo `rafi` jednoznačne odkazuje na lokálny `tinder_case`/`tinder_verification` a jeho aktuálny `match_id`. Link nie je súčasťou podpísaného requestu, takže nemení jeho digest ani rozhodovací kontrakt.
 - Klient musí mapovanie opäť validovať: UUID requestu, HTTPS, presný host `tinder.com`, cesta `/app/messages/<ID>`, bezpečné ID a žiadny port, query ani fragment. Link sa drží iba v pamäti, zobrazuje sa hneď pod textom „Čo schvaľuješ“ a nikdy sa nezobrazuje pre obyčajný Rafi request alebo iný zdroj.
+- Aj kontakt v sekcii `Manuálne` môže dostať tento link, ale iba z autentifikovaného privátneho indexu a iba keď jeho lokálny prípad aj vlastnícky register zhodne potvrdzujú aktuálny stav `manual_user`, vlastníka `user`, režim `manual` a rovnaký bezpečný Tinder identifikátor. Duplicitné zobrazované meno, chýbajúca väzba alebo WhatsApp-only kontakt zlyhá bezpečne bez linku. Klient URL znovu striktne validuje, drží ju iba v pamäti a otvorí ju v izolovanom novom kontexte.
 
 ### Policy pred automatickým Tinder odoslaním (2026-10-24)
 
