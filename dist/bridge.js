@@ -3,7 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
-let noActionChats=[],incomingScannedAt=null,noActionVisible=100;
+let noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false;
@@ -25,7 +25,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){noActionChats=[];incomingScannedAt=null;instagramContacts=[];instagramControl=null;instagramPending=false;drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -92,7 +92,7 @@ function render(){
    for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li');row.append(element('strong',c.name),element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
    resolved.append(title,element('p','Tu sú vedome uzavreté konverzácie. Nová prijatá správa sa znovu posúdi.','hint'),list);
    if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;groupOpen.set('tinder-no-action',true);render()};resolved.append(more)}
-   group.append(resolved,element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
+   group.append(resolved,element('p',bridgeHealthText,'hint'),element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
   }
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
@@ -150,7 +150,7 @@ function render(){
  inactive.append(inactiveTitle);
  for(const item of pendingInactive){const card=element('article',undefined,'request');card.append(element('h3',item.record.request.title));const chatUrl=item.open_url||item.record.request.chat_url;if(chatUrl)appendTinderActions(card,chatUrl);card.append(element('p',item.record.request.body));const controls=element('div',undefined,'decision-buttons');for(const [outcome,label] of [['approved','Áno, zaradiť medzi aktívne'],['rejected','Nie, ponechať neaktívny']]){const button=element('button',label);button.type='button';button.disabled=working;button.onclick=()=>decide(item,outcome);controls.append(button)}card.append(controls);inactive.append(card)}
  const inactiveList=element('ul',undefined,'contact-list');
- for(const chat of inactiveChats){const row=element('li'),link=element('a',chat.name,'contact-name');link.href=chat.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link);inactiveList.append(row)}
+ for(const chat of [...inactiveChats].sort((a,b)=>Number(b.state==='reactivation_pending')-Number(a.state==='reactivation_pending')||a.name.localeCompare(b.name))){const row=element('li'),link=element('a',chat.name,'contact-name');link.href=chat.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link,element('p',chat.state==='reactivation_pending'?'Nová správa · čaká na tvoje potvrdenie reaktivácie.':'Neaktívny · automatické spracovanie je vypnuté.','hint'));inactiveList.append(row)}
  inactive.append(inactiveList,element('p',inactiveStatus,'group-empty'));
  $('requests').append(inactive);
 }
@@ -503,6 +503,13 @@ $('tinder-automation-toggle').onclick=async()=>{
  }catch(e){failure=e.message||'Zmenu sa nepodarilo potvrdiť.'}
  finally{automationSaving=false;await loadProgress();showAutomation(automationState,failure)}
 };
+export function bridgeHealthMessage(health){
+ if(!health||!['ok','partial','error','deferred','sync_failed','sync_timeout','credential_unavailable','macos_file_access_blocked'].includes(health.state)||!Number.isFinite(Date.parse(health.checked_at)))return 'Stav synchronizácie s MacBookom zatiaľ nie je dostupný.';
+ const stamp=Date.parse(health.checked_at);if(stamp>Date.now()+30000)return 'Stav synchronizácie sa nepodarilo overiť.';
+ if(Date.now()-stamp>20*60000)return 'Údaje z MacBooku sú staršie než 20 minút. Synchronizácia môže byť prerušená.';
+ const when=health.progress_success_at&&Number.isFinite(Date.parse(health.progress_success_at))?' · potvrdené doručenie '+new Date(health.progress_success_at).toLocaleTimeString('sk-SK'):'';
+ return (health.state==='ok'?'Synchronizácia s MacBookom funguje.':health.state==='partial'?'Panel sa synchronizuje; iná časť bridge hlási chybu.':health.state==='deferred'?'Synchronizácia čaká na povolený ďalší pokus.':'Synchronizácia s MacBookom hlási chybu.')+when;
+}
 export function validateNoActionDetails(rows){
  if(rows===undefined)return [];
  if(!Array.isArray(rows)||rows.length>10000)throw Error('Neplatné uzavreté chaty.');const ids=new Set();
@@ -512,7 +519,7 @@ function loadProgress(){if(!progressLoading)progressLoading=readProgress().final
 async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');if(!token)return;const p=decode(file.content);
-  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const closed=validateNoActionDetails(p.no_action_details);const chats=chatProjections(p);noActionChats=closed;incomingScannedAt=Number.isFinite(Date.parse(p.incoming_scanned_at))&&Date.parse(p.incoming_scanned_at)<=Date.now()+30000?p.incoming_scanned_at:null;renderWaiting(chats.waiting,chats.waitingCount);renderActive(chats.active);
+  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const closed=validateNoActionDetails(p.no_action_details);const chats=chatProjections(p);noActionChats=closed;bridgeHealthText=bridgeHealthMessage(p.bridge_health);incomingScannedAt=Number.isFinite(Date.parse(p.incoming_scanned_at))&&Date.parse(p.incoming_scanned_at)<=Date.now()+30000?p.incoming_scanned_at:null;renderWaiting(chats.waiting,chats.waitingCount);renderActive(chats.active);
   showAutomation(p.automation);
   $('tinder-blocked').textContent=`Čaká na tvoje vyjadrenie: ${Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0} · Potrebuje overenie: ${Number.isSafeInteger(p.requires_verification)?p.requires_verification:0}. Tieto prípady sa automaticky nespracúvajú.`;
   if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0&&Number.isSafeInteger(p.messages_in_resolution)&&p.messages_in_resolution>=0){
