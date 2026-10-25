@@ -1,8 +1,9 @@
 const REPO='tomas-sabo/bridge',PREFIX='operator/requests';
-const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['robota','Robota'],['whatsapp','WhatsApp'],['instagram','Instagram']];
+const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['robota','Robota'],['whatsapp','WhatsApp'],['instagram','Instagram'],['inactive','Neaktívni']];
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
+let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 const REQUEST_DRAFTS_KEY='iphone-lab-request-drafts-v1';
 function storedRequestDrafts(){try{const value=JSON.parse(localStorage.getItem(REQUEST_DRAFTS_KEY)||'[]');return Array.isArray(value)?value.filter(row=>Array.isArray(row)&&typeof row[0]==='string'&&typeof row[1]==='string'&&row[1].length<=3000):[]}catch{return []}}
@@ -67,6 +68,7 @@ function render(){
  if(editingPanel()){renderDeferred=true;return}renderDeferred=false;
  syncBadge();$('requests').replaceChildren();
  for(const [source,name] of SOURCES){
+  if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
   const matches=items.filter(item=>item.record.request.source===source);
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
@@ -125,9 +127,14 @@ function render(){
  const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
  manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
- const inactive=element('details',undefined,'request-group inactive-contacts');inactive.open=groupOpen.get('inactive-contacts')||false;
- const inactiveTitle=element('summary','Neaktívni','group-heading');inactiveTitle.onclick=()=>groupOpen.set('inactive-contacts',!inactive.open);
- inactive.append(inactiveTitle,element('p','Zatiaľ žiadne neaktívne kontakty.','group-empty'));
+ const pendingInactive=items.filter(i=>i.record.request.source==='inactive'&&!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at));
+ const inactive=element('details',undefined,'request-group inactive-contacts');inactive.open=groupOpen.get('inactive-contacts')||pendingInactive.length>0;
+ const inactiveTitle=element('summary','Neaktívni','group-heading');inactiveTitle.append(element('span',`${pendingInactive.length}/${inactiveChats.filter(c=>c.state==='inactive').length}`,'group-count'));inactiveTitle.onclick=()=>groupOpen.set('inactive-contacts',!inactive.open);
+ inactive.append(inactiveTitle);
+ for(const item of pendingInactive){const card=element('article',undefined,'request');card.append(element('h3',item.record.request.title),element('p',item.record.request.body));const controls=element('div',undefined,'decision-buttons');for(const [outcome,label] of [['approved','Áno, zaradiť medzi aktívne'],['rejected','Nie, ponechať neaktívny']]){const button=element('button',label);button.type='button';button.disabled=working;button.onclick=()=>decide(item,outcome);controls.append(button)}card.append(controls);inactive.append(card)}
+ const inactiveList=element('ul',undefined,'contact-list');
+ for(const chat of inactiveChats){const row=element('li'),link=element('a',chat.name,'contact-name');link.href=chat.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link);inactiveList.append(row)}
+ inactive.append(inactiveList,element('p',inactiveStatus,'group-empty'));
  $('requests').append(inactive);
 }
 let progressLoading=null;
@@ -325,6 +332,15 @@ async function loadWhatsAppNames(){
  catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
  render();
 }
+export function validateInactiveChats(data){
+ if(data?.schema_version!==1||!Array.isArray(data.chats)||data.chats.length>10000||data.total!==data.chats.length||!Number.isSafeInteger(data.pending)||data.pending!==data.chats.filter(c=>c?.state==='reactivation_pending').length)throw Error('Neplatný zoznam neaktívnych chatov.');
+ const ids=new Set();return data.chats.map(c=>{if(!c||typeof c.match_id!=='string'||!/^[A-Za-z0-9_-]{3,160}$/.test(c.match_id)||ids.has(c.match_id)||typeof c.name!=='string'||!c.name.trim()||c.name.length>160||!['inactive','reactivation_pending'].includes(c.state))throw Error('Neplatný neaktívny chat.');ids.add(c.match_id);const open_url=validateTinderChatUrl(c.open_url);if(new URL(open_url).pathname!=='/app/messages/'+c.match_id)throw Error('Nesúhlasí odkaz na chat.');return {...c,name:c.name.trim(),open_url}});
+}
+async function loadInactiveChats(){
+ try{const file=await api('/contents/operator/tinder-inactive.json?ref=main');const rows=validateInactiveChats(decode(file.content));if(!token)return;inactiveChats=rows;inactiveStatus=rows.length?'Bez potvrdenia sa tieto chaty automaticky nespracujú.':'Žiadne neaktívne chaty.'}
+ catch{inactiveStatus='Neaktívne chaty sa nepodarilo načítať. Skús synchronizáciu znova.'}
+ render();
+}
 let selectedManualContact=null;
 function showManualChoice(name){
  const detail=conversationIndex.find(c=>c.name===name);if(detail)return openConversation(detail.id);
@@ -432,7 +448,7 @@ async function refresh(){
  try{return await refreshContents()}catch(e){if(controller.signal.aborted)throw Error('Obnovenie trvalo príliš dlho. Skontroluj spojenie a zopakuj synchronizáciu.');throw e}
  finally{clearTimeout(timer);if(refreshController===controller)refreshController=null}
 }
-async function refreshContents(){try{await loadProgress();const status=await requestStatus(),inactive=status.inactive;const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5),open_url=status.links.get(id),action=status.actions.get(id);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push({...previous,...(open_url?{open_url}:{open_url:null}),...(action?{draft:action.draft}:{draft:null})});continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);next.push({sha:file.sha,record,...(open_url&&['tinder','rafi'].includes(record.request.source)?{open_url,draft:action?.draft??null}:{})})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}catch(e){items=[];render();message('Aktívne dotazy sa nepodarilo bezpečne overiť. Skús synchronizáciu znova.');throw e}finally{if(token&&!refreshController?.signal.aborted){await loadWhatsAppNames();await loadConversationIndex();}}}
+async function refreshContents(){try{await loadProgress();const status=await requestStatus(),inactive=status.inactive;const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5),open_url=status.links.get(id),action=status.actions.get(id);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push({...previous,...(open_url?{open_url}:{open_url:null}),...(action?{draft:action.draft}:{draft:null})});continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);next.push({sha:file.sha,record,...(open_url&&['tinder','rafi'].includes(record.request.source)?{open_url,draft:action?.draft??null}:{})})}lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}catch(e){items=[];render();message('Aktívne dotazy sa nepodarilo bezpečne overiť. Skús synchronizáciu znova.');throw e}finally{if(token&&!refreshController?.signal.aborted){await loadInactiveChats();await loadWhatsAppNames();await loadConversationIndex();}}}
 async function decide(item,outcome,comment='',permission=null,confirmed=false){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirmed&&!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);saveRequestDrafts();render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){
  if(working||!token)return;
@@ -481,7 +497,7 @@ $('refresh').onclick=async()=>{
  }catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;button.disabled=false;render()}
 };
-$('disconnect').onclick=()=>{showAutomation(null);forgetPairing();resetConversations(true);token='';items=[];whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
+$('disconnect').onclick=()=>{showAutomation(null);forgetPairing();resetConversations(true);token='';items=[];inactiveChats=[];inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';whatsappNames=[];whatsappUnassigned=[];whatsappManual=[];whatsappListStatus='Pripoj bridge na načítanie kontaktov.';lastRefresh=0;render();$('connect').hidden=false;$('disconnect').hidden=true;$('tinder-overall-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-overall-meter').value=0;$('tinder-overall-eta').textContent='Pripoj bridge na načítanie odhadu.';$('tinder-count').textContent='Pripoj bridge na načítanie priebehu.';$('tinder-meter').value=0;$('tinder-detail').textContent='';$('tinder-eta').textContent='Odhad dokončenia zatiaľ nie je dostupný.';message('Párovanie je odstránené z tohto zariadenia.')};
 window.addEventListener('pagehide',()=>{refreshController?.abort();rememberConversationWork();saveRequestDrafts();$('bridge-token').value=''});
 
 function restorePairing(){if(!token&&!working){const saved=savedPairing();if(saved){message('Obnovujem uložené pripojenie…');return connectBridge(saved)}}}
