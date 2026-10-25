@@ -11,4 +11,12 @@ assert.throws(()=>ctx.chatProjections({...p,active_count:249}));assert.throws(()
 const legacy=ctx.chatProjections({awaiting_details:[row(1),row(2,'needs_user')],waiting_count:2});assert.equal(legacy.waiting.length,1);assert.equal(legacy.active,null);
 ctx.renderActive(active);assert.equal($('tinder-active-count').textContent,'250');assert.equal($('tinder-active-list').children.length,101);$('tinder-active-list').children.at(-1).onclick();assert.equal($('tinder-active-list').children.length,201);$('tinder-active-list').children.at(-1).onclick();assert.equal($('tinder-active-list').children.length,250);assert.equal($('tinder-active-list').children[0].children[2].textContent,active[0].open_url);
 const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');assert(html.indexOf('id="tinder-waiting"')<html.indexOf('id="tinder-active"'));assert(html.indexOf('id="tinder-active"')<html.indexOf('<h1>Pre Tomyho</h1>'));assert(!html.includes('id="tinder-active" open'));
+const waiting=Array.from({length:250},(_,i)=>({...row(i+1000,'dispatched'),stalled:i===0}));
+assert.equal(ctx.validateWaitingDetails(waiting).length,250);ctx.renderWaiting(waiting,250);
+assert.equal($('tinder-waiting-count').textContent,'250');assert.equal($('tinder-waiting-list').children.length,101);
+assert($('tinder-waiting-list').children[0].children.some(x=>x.textContent==='Zaseknuté'));
+assert(!$('tinder-waiting-list').children[1].children.some(x=>x.textContent==='Zaseknuté'));
+$('tinder-waiting-list').children.at(-1).onclick();assert.equal($('tinder-waiting-list').children.length,201);
+assert.equal(ctx.validateWaitingDetails([row(9000,'queued')])[0].stalled,false);
+assert.throws(()=>ctx.validateWaitingDetails([{...row(9001,'prepared'),stalled:'yes'}]));
 console.log('Active chats: distinct projections, count consistency, safe URLs, >100 complete rows, incremental rendering and section order passed.');

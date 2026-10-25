@@ -51,3 +51,5 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 @media(max-width:420px){.tinder-waiting>summary{padding:16px}.waiting-list{padding:0 16px 6px}#tinder-waiting-status{margin:14px 16px}.waiting-chat-header{align-items:flex-start;flex-direction:column;gap:3px}}
 
 #tinder-active-status{margin:14px 20px}
+
+.waiting-chat.is-stalled{border-left:4px solid #b42318;background:#fff1f0}.waiting-stalled-label{display:block;color:#9f1c12;margin-top:.4rem;font-size:.9rem}.waiting-chat.is-stalled .waiting-chat-reason{color:#7f1d1d}
