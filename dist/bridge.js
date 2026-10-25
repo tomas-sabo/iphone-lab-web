@@ -75,7 +75,7 @@ function render(){
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
   heading.onclick=()=>groupOpen.set(source,!group.open);
-  heading.append(element('span',`${pending}/${matches.length}${source==='whatsapp'&&whatsappNames.length?' · '+whatsappNames.length+' kontaktov':''}`,'group-count'));
+  heading.append(element('span',`${pending}/${source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
   group.append(heading);
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
@@ -123,7 +123,7 @@ function render(){
 
  const manualNames=manualContactNames(whatsappManual,conversationIndex);
  const manual=element('details',undefined,'request-group manual-contacts');manual.open=groupOpen.get('manual-contacts')||false;
- const title=element('summary',`Manuálne (${manualNames.length})`,'group-heading');title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
+ const title=element('summary','Manuálne','group-heading');title.append(element('span',`0/${manualNames.length}`,'group-count'));title.onclick=()=>groupOpen.set('manual-contacts',!manual.open);
  const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
  manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
