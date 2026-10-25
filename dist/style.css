@@ -53,3 +53,5 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 #tinder-active-status{margin:14px 20px}
 
 .waiting-chat.is-stalled{border-left:4px solid #b42318;background:#fff1f0}.waiting-stalled-label{display:block;color:#9f1c12;margin-top:.4rem;font-size:.9rem}.waiting-chat.is-stalled .waiting-chat-reason{color:#7f1d1d}
+
+.instagram-toggle{margin-left:auto;padding:.35rem .7rem;min-width:6rem;border-radius:999px;font-size:.8rem}.instagram-toggle[aria-checked=true]{background:#16854c;color:#fff}.instagram-toggle[aria-checked=false]{background:#555;color:#fff}

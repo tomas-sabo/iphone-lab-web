@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
-let instagramContacts=[];
+let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false;
 const REQUEST_DRAFTS_KEY='iphone-lab-request-drafts-v1';
 function storedRequestDrafts(){try{const value=JSON.parse(localStorage.getItem(REQUEST_DRAFTS_KEY)||'[]');return Array.isArray(value)?value.filter(row=>Array.isArray(row)&&typeof row[0]==='string'&&typeof row[1]==='string'&&row[1].length<=3000):[]}catch{return []}}
 const drafts=new Map(storedRequestDrafts()),groupOpen=new Map();
@@ -24,7 +24,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){instagramContacts=[];drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){instagramContacts=[];instagramControl=null;instagramPending=false;drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -71,17 +71,20 @@ function render(){
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
-  const matches=items.filter(item=>item.record.request.source===source);
+  const matches=source==='instagram'?[]:items.filter(item=>item.record.request.source===source);
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
   heading.onclick=()=>groupOpen.set(source,!group.open);
-  heading.append(element('span',`${pending}/${source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
+  heading.append(element('span',`${pending}/${source==='instagram'?instagramContacts.length:source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
+  if(source==='instagram'){
+   const toggle=element('button',instagramSaving||instagramPending?'Čaká…':instagramControl?(instagramControl.enabled?'Zapnutý':'Vypnutý'):'Neznámy','instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Instagram autopilot');toggle.setAttribute?.('aria-checked',String(instagramControl?.enabled===true));toggle.disabled=!token||!instagramControl||instagramSaving||instagramPending;toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation()};heading.append(toggle);
+  }
   group.append(heading);
   if(source==='instagram'){
    const list=element('ul',undefined,'contact-list');
    for(const contact of instagramContacts){const row=element('li');row.append(element('strong',contact.name));if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
-   group.append(list);
+   group.append(list,element('p',instagramPending?'Čakám na potvrdenie z MacBooku…':!instagramControl?'Stav autopilota sa načítava.':instagramControl.enabled?'Autopilot odpovedá v spárovaných chatoch.':'Autopilot je vypnutý.','hint'));
   }
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
@@ -98,7 +101,7 @@ function render(){
    if(!whatsappUnassigned.some(name=>!whatsappManual.includes(name)))unassigned.append(element('p','Žiadne nepriradené kontakty.','group-empty'));
    group.append(unassigned,element('p',whatsappListStatus,'group-empty'));
   }
-  if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
+  if(!matches.length&&source!=='instagram')group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
   $('requests').append(group);
   for(const item of matches){
    const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at),done=Boolean(d)||expired;
@@ -382,6 +385,17 @@ export function instagramChatLink(contact){
  if(typeof contact?.username!=='string'||!/^[A-Za-z0-9_.]{1,30}$/.test(contact.username))throw Error('Neplatné Instagram meno.');
  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'')?'https://ig.me/m/'+contact.username:contact.open_url;
 }
+const INSTAGRAM_CONTROL_PATH='/contents/operator/instagram-automation.json';
+async function loadInstagramAutomation(){
+ try{const doc=decode((await api(INSTAGRAM_CONTROL_PATH+'?ref=main')).content);if(doc.schema_version!==1||!freshAutomation(doc.status))throw Error('Neplatný stav Instagramu.');if(!token)return;instagramControl=doc.status;instagramPending=Boolean(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())}catch{instagramControl=null;instagramPending=false}
+}
+async function changeInstagramAutomation(){
+ if(!token||!instagramControl||instagramSaving||instagramPending)return;
+ const desired=!instagramControl.enabled;instagramSaving=true;render();
+ try{const file=await api(INSTAGRAM_CONTROL_PATH+'?ref=main'),doc=decode(file.content);if(doc.schema_version!==1||!freshAutomation(doc.status)||doc.status.revision!==instagramControl.revision)throw Error('Stav sa zmenil. Synchronizuj panel.');if(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())throw Error('Predošlá zmena ešte čaká.');doc.request={id:crypto.randomUUID(),operator:'Tomy',enabled:desired,expected_revision:doc.status.revision,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+120000).toISOString()};instagramPending=true;await api(INSTAGRAM_CONTROL_PATH,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Request Instagram autopilot change',content:encode(doc)})});message('Zmena Instagram autopilota čaká na potvrdenie z MacBooku.')}
+ catch(e){message(e.message);await loadInstagramAutomation()}
+ finally{instagramSaving=false;render()}
+}
 export function validateInstagramContacts(data){
  if(data?.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>1000)throw Error('Neplatné Instagram kontakty.');
  const ids=new Set();return data.contacts.map(c=>{
@@ -392,7 +406,7 @@ export function validateInstagramContacts(data){
  });
 }
 async function loadInstagramContacts(){
- try{const file=await api('/contents/operator/instagram-contacts.json?ref=main'),rows=validateInstagramContacts(decode(file.content));if(token)instagramContacts=rows}catch(e){if(e.status===404)instagramContacts=[]}
+ try{const file=await api('/contents/operator/instagram-contacts.json?ref=main'),rows=validateInstagramContacts(decode(file.content));if(token)instagramContacts=rows;await loadInstagramAutomation()}catch(e){if(e.status===404)instagramContacts=[]}
  render();
 }
 export function validateInactiveChats(data){
