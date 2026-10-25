@@ -125,6 +125,10 @@ function render(){
  const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
  manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
+ const inactive=element('details',undefined,'request-group inactive-contacts');inactive.open=groupOpen.get('inactive-contacts')||false;
+ const inactiveTitle=element('summary','Neaktívni','group-heading');inactiveTitle.onclick=()=>groupOpen.set('inactive-contacts',!inactive.open);
+ inactive.append(inactiveTitle,element('p','Zatiaľ žiadne neaktívne kontakty.','group-empty'));
+ $('requests').append(inactive);
 }
 let progressLoading=null;
 let statisticsManifest=null,statisticsData=null,statisticsLoading=false,statisticsMonth='',statisticsMetric='totalMD';
