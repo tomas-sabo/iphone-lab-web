@@ -77,14 +77,12 @@ function render(){
   const heading=element('summary',name,'group-heading');
   heading.onclick=()=>groupOpen.set(source,!group.open);
   heading.append(element('span',`${pending}/${source==='instagram'?instagramContacts.length:source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
-  if(source==='instagram'){
-   const toggle=element('button',instagramSaving||instagramPending?'Čaká…':instagramControl?(instagramControl.enabled?'Zapnutý':'Vypnutý'):'Neznámy','instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Instagram autopilot');toggle.setAttribute?.('aria-checked',String(instagramControl?.enabled===true));toggle.disabled=!token||!instagramControl||instagramSaving||instagramPending;toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation()};heading.append(toggle);
-  }
+
   group.append(heading);
   if(source==='instagram'){
    const list=element('ul',undefined,'contact-list');
-   for(const contact of instagramContacts){const row=element('li');row.append(element('strong',contact.name));if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
-   group.append(list,element('p',instagramPending?'Čakám na potvrdenie z MacBooku…':!instagramControl?'Stav autopilota sa načítava.':instagramControl.enabled?'Autopilot odpovedá v spárovaných chatoch.':'Autopilot je vypnutý.','hint'));
+   for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username];const toggle=element('button',undefined,'instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(state?.enabled===true));toggle.disabled=!token||!state||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Načítavam stav';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
+   group.append(list,element('p',instagramPending?'Čakám na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
   }
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
@@ -387,12 +385,12 @@ export function instagramChatLink(contact){
 }
 const INSTAGRAM_CONTROL_PATH='/contents/operator/instagram-automation.json';
 async function loadInstagramAutomation(){
- try{const doc=decode((await api(INSTAGRAM_CONTROL_PATH+'?ref=main')).content);if(doc.schema_version!==1||!freshAutomation(doc.status))throw Error('Neplatný stav Instagramu.');if(!token)return;instagramControl=doc.status;instagramPending=Boolean(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())}catch{instagramControl=null;instagramPending=false}
+ try{const doc=decode((await api(INSTAGRAM_CONTROL_PATH+'?ref=main')).content);if(doc.schema_version!==1||!freshAutomation(doc.status))throw Error('Neplatný stav Instagramu.');if(!token)return;instagramControl=doc.status;instagramPending=doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now()?(doc.request.username||'*'):false}catch{instagramControl=null;instagramPending=false}
 }
-async function changeInstagramAutomation(){
- if(!token||!instagramControl||instagramSaving||instagramPending)return;
- const desired=!instagramControl.enabled;instagramSaving=true;render();
- try{const file=await api(INSTAGRAM_CONTROL_PATH+'?ref=main'),doc=decode(file.content);if(doc.schema_version!==1||!freshAutomation(doc.status)||doc.status.revision!==instagramControl.revision)throw Error('Stav sa zmenil. Synchronizuj panel.');if(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())throw Error('Predošlá zmena ešte čaká.');doc.request={id:crypto.randomUUID(),operator:'Tomy',enabled:desired,expected_revision:doc.status.revision,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+120000).toISOString()};instagramPending=true;await api(INSTAGRAM_CONTROL_PATH,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Request Instagram autopilot change',content:encode(doc)})});message('Zmena Instagram autopilota čaká na potvrdenie z MacBooku.')}
+async function changeInstagramAutomation(username){
+ if(!token||!instagramControl?.contacts?.[username]||instagramSaving||instagramPending)return;
+ const desired=!instagramControl.contacts[username].enabled;instagramSaving=true;render();
+ try{const file=await api(INSTAGRAM_CONTROL_PATH+'?ref=main'),doc=decode(file.content);if(doc.schema_version!==1||!freshAutomation(doc.status)||doc.status.revision!==instagramControl.revision)throw Error('Stav sa zmenil. Synchronizuj panel.');if(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())throw Error('Predošlá zmena ešte čaká.');doc.request={id:crypto.randomUUID(),operator:'Tomy',username,enabled:desired,expected_revision:doc.status.revision,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+120000).toISOString()};instagramPending=username;await api(INSTAGRAM_CONTROL_PATH,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Request Instagram chat autopilot change',content:encode(doc)})});message('Zmena Instagram autopilota čaká na potvrdenie z MacBooku.')}
  catch(e){message(e.message);await loadInstagramAutomation()}
  finally{instagramSaving=false;render()}
 }
