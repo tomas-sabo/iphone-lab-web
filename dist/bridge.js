@@ -699,3 +699,41 @@ function readableEndLegend(instance){
  }
  svg.innerHTML=paths.join('');
 }
+
+// The public VAPID key authorizes this app; the private signing key stays on Mac.
+const PUSH_PUBLIC_KEY='BKEwNKruCnFfPNkEFEe6H6pQaPWPDkMAMi5UcTl7VQRdERZPDj9jhPZQ4RltPekPdHasw-8KeSVmnjXivu1a5C0';
+const PUSH_DEVICE_KEY='iphone-lab-push-device-v1';
+function pushKey(value){const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0))}
+function pushEngine(worker){return new Promise(resolve=>{if(!worker)return resolve(false);const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();resolve(false)},2000);channel.port1.onmessage=e=>{clearTimeout(timer);channel.port1.close();resolve(e.data?.push===true)};worker.postMessage({type:'PUSH_STATUS'},[channel.port2])})}
+let pushRegistration=null,pushSubscription=null,pushReady=false;
+async function preparePush(){
+ const button=$('push-enable'),status=$('push-status');if(!button||!status)return;
+ if(!('serviceWorker' in navigator)||!('PushManager' in window)){button.disabled=true;status.textContent='Na iPhone otvor aplikáciu z ikony na ploche. Upozornenia vyžadujú iOS 16.4 alebo novší.';return}
+ pushRegistration=await navigator.serviceWorker.ready;
+ if(!await pushEngine(navigator.serviceWorker.controller)){status.textContent='Najprv stlač hore Aktualizovať, aby sa pripravil aj systém upozornení.';return}
+ pushSubscription=await pushRegistration.pushManager.getSubscription();pushReady=true;
+ if(typeof Notification!=='undefined'&&Notification.permission==='granted')button.textContent='Vyskúšať upozornenie';
+}
+async function enablePush(){
+ const button=$('push-enable'),status=$('push-status');if(!button||!status)return;
+ if(!token){status.textContent='Najprv pripoj bridge.';return}
+ if(!pushRegistration||!pushReady){status.textContent='Najprv stlač Aktualizovať a potom skús upozornenia znova.';return}
+ button.disabled=true;
+ try{
+  // Subscription must start from this user gesture; iOS shows its own consent.
+  const subscribing=pushSubscription?Promise.resolve(pushSubscription):pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKey(PUSH_PUBLIC_KEY)});
+  const subscription=await subscribing;pushSubscription=subscription;
+  let id=localStorage.getItem(PUSH_DEVICE_KEY);if(!UUID.test(id||'')){id=crypto.randomUUID();localStorage.setItem(PUSH_DEVICE_KEY,id)}
+  let file=null,document={schema_version:1,devices:{}};
+  try{file=await api('/contents/operator/push-subscriptions.json?ref=main');document=decode(file.content)}catch(error){if(error.status!==404)throw error}
+  if(document?.schema_version!==1||!document.devices||typeof document.devices!=='object'||Array.isArray(document.devices)||Object.keys(document.devices).length>10)throw Error('Neplatné nastavenie upozornení.');
+  const before=document.devices[id],now=new Date().toISOString();
+  document.devices[id]={subscription:subscription.toJSON(),enabled_at:before?.enabled_at||now,test_id:crypto.randomUUID()};
+  if(Object.keys(document.devices).length>10)throw Error('Je pripojených priveľa zariadení.');
+  await api('/contents/operator/push-subscriptions.json',{method:'PUT',body:JSON.stringify({branch:'main',message:'Enable private operator notifications',content:encode(document),...(file?{sha:file.sha}:{})})});
+  button.textContent='Vyskúšať upozornenie';status.textContent='Upozornenia sú zapnuté. Skúšobné príde po najbližšej synchronizácii MacBooku. Zvuk a vibrácie povoľ v nastaveniach upozornení iPhonu.';
+ }catch(error){status.textContent=typeof Notification!=='undefined'&&Notification.permission==='denied'?'Upozornenia sú zakázané. Povoľ ich pre iPhone Lab v Nastaveniach iPhonu.':error.message}
+ finally{button.disabled=false}
+}
+$('push-enable')?.addEventListener?.('click',enablePush);
+preparePush().catch(()=>{if($('push-status'))$('push-status').textContent='Upozornenia sa zatiaľ nepodarilo pripraviť. Skús Aktualizovať.'});

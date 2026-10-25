@@ -31,6 +31,7 @@ self.addEventListener('install',event=>event.waitUntil((async()=>{
 })()));
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 self.addEventListener('message',event=>{
+ if(event.data?.type==='PUSH_STATUS'){const u=event.source?.url?new URL(event.source.url):null;if(u&&u.origin===ROOT.origin&&u.pathname.startsWith(ROOT.pathname))event.ports?.[0]?.postMessage({push:true});return}
  if(event.data?.type==='SKIP_WAITING'){self.skipWaiting();return}
  if(event.data?.type!=='GIT_UPDATE'||!event.ports?.[0]||!event.source?.url)return;
  const source=new URL(event.source.url);if(source.origin!==ROOT.origin||!source.pathname.startsWith(ROOT.pathname))return;
@@ -41,4 +42,26 @@ self.addEventListener('fetch',event=>{
  const path=event.request.mode==='navigate'?'index.html':url.pathname.slice(ROOT.pathname.length);
  if(!Object.hasOwn(TYPES,path))return;
  event.respondWith((async()=>{const current=await active();if(current){const hit=await (await caches.open(current.cache)).match(new URL(path,ROOT).href);if(hit)return hit}return fetch(event.request)})());
+});
+
+// Visible system notifications only; never carry operator text or credentials.
+self.addEventListener('push',event=>{
+ let data={};try{data=event.data?.json()||{}}catch{}
+ const count=Number.isSafeInteger(data.count)&&data.count>=0?Math.min(data.count,10000):1;
+ event.waitUntil((async()=>{
+  await self.registration.showNotification(data.test===true?'Skúšobné upozornenie':'Nový dotaz pre Tomyho',{
+   body:data.test===true?'Upozornenia sú pripravené.':'Otvor aplikáciu a pozri si nový dotaz.',
+   icon:new URL('icon-192.png',ROOT).href,badge:new URL('icon-192.png',ROOT).href,
+   tag:'operator-questions',renotify:true,silent:false,data:{kind:'operator'}
+  });
+  try{if(self.navigator?.setAppBadge)await self.navigator.setAppBadge(count)}catch{}
+ })());
+});
+self.addEventListener('notificationclick',event=>{
+ event.notification.close();
+ event.waitUntil((async()=>{
+  const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+  for(const client of clients){const u=new URL(client.url);if(u.origin===ROOT.origin&&u.pathname.startsWith(ROOT.pathname))return client.focus()}
+  return self.clients.openWindow(ROOT.href);
+ })());
 });
