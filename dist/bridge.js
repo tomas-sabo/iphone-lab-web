@@ -3,6 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
+let noActionChats=[],incomingScannedAt=null,noActionVisible=100;
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false;
@@ -24,7 +25,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){instagramContacts=[];instagramControl=null;instagramPending=false;drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){noActionChats=[];incomingScannedAt=null;instagramContacts=[];instagramControl=null;instagramPending=false;drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -83,6 +84,15 @@ function render(){
    const list=element('ul',undefined,'contact-list');
    for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username];const toggle=element('button',undefined,'instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(state?.enabled===true));toggle.disabled=!token||!state||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Načítavam stav';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
    group.append(list,element('p',instagramPending?'Čakám na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
+  }
+  if(source==='tinder'){
+   const resolved=element('details',undefined,'no-action-chats');resolved.open=groupOpen.get('tinder-no-action')||false;
+   const title=element('summary',`Spracované bez odpovede (${noActionChats.length})`);title.onclick=()=>groupOpen.set('tinder-no-action',!resolved.open);
+   const list=element('ul',undefined,'contact-list');
+   for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li');row.append(element('strong',c.name),element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
+   resolved.append(title,element('p','Tu sú vedome uzavreté konverzácie. Nová prijatá správa sa znovu posúdi.','hint'),list);
+   if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;groupOpen.set('tinder-no-action',true);render()};resolved.append(more)}
+   group.append(resolved,element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
   }
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
@@ -493,11 +503,16 @@ $('tinder-automation-toggle').onclick=async()=>{
  }catch(e){failure=e.message||'Zmenu sa nepodarilo potvrdiť.'}
  finally{automationSaving=false;await loadProgress();showAutomation(automationState,failure)}
 };
+export function validateNoActionDetails(rows){
+ if(rows===undefined)return [];
+ if(!Array.isArray(rows)||rows.length>10000)throw Error('Neplatné uzavreté chaty.');const ids=new Set();
+ return rows.map(row=>{if(!row||typeof row.case_id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(row.case_id)||ids.has(row.case_id)||row.state!=='no_action'||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000)throw Error('Neplatný uzavretý chat.');validateTinderChatUrl(row.open_url);ids.add(row.case_id);return row});
+}
 function loadProgress(){if(!progressLoading)progressLoading=readProgress().finally(()=>{progressLoading=null});return progressLoading}
 async function readProgress(){
  try{
   const file=await api('/contents/operator/tinder-progress.json?ref=main');if(!token)return;const p=decode(file.content);
-  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const chats=chatProjections(p);renderWaiting(chats.waiting,chats.waitingCount);renderActive(chats.active);
+  if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!Number.isFinite(Date.parse(p.updated_at)))throw Error('Invalid progress');const closed=validateNoActionDetails(p.no_action_details);const chats=chatProjections(p);noActionChats=closed;incomingScannedAt=Number.isFinite(Date.parse(p.incoming_scanned_at))&&Date.parse(p.incoming_scanned_at)<=Date.now()+30000?p.incoming_scanned_at:null;renderWaiting(chats.waiting,chats.waitingCount);renderActive(chats.active);
   showAutomation(p.automation);
   $('tinder-blocked').textContent=`Čaká na tvoje vyjadrenie: ${Number.isSafeInteger(p.awaiting_operator)?p.awaiting_operator:0} · Potrebuje overenie: ${Number.isSafeInteger(p.requires_verification)?p.requires_verification:0}. Tieto prípady sa automaticky nespracúvajú.`;
   if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0&&Number.isSafeInteger(p.messages_in_resolution)&&p.messages_in_resolution>=0){
