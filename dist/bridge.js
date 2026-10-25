@@ -80,7 +80,7 @@ function render(){
   group.append(heading);
   if(source==='instagram'){
    const list=element('ul',undefined,'contact-list');
-   for(const contact of instagramContacts){const row=element('li');row.append(element('strong',contact.name));if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=contact.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
+   for(const contact of instagramContacts){const row=element('li');row.append(element('strong',contact.name));if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
    group.append(list);
   }
   if(source==='whatsapp'){
@@ -377,6 +377,10 @@ async function loadWhatsAppNames(){
  try{const file=await api('/contents/operator/whatsapp-contacts.json?ref=main');applyContacts(validateContacts(decode(file.content)))}
  catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
  render();
+}
+export function instagramChatLink(contact){
+ if(typeof contact?.username!=='string'||!/^[A-Za-z0-9_.]{1,30}$/.test(contact.username))throw Error('Neplatné Instagram meno.');
+ return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'')?'https://ig.me/m/'+contact.username:contact.open_url;
 }
 export function validateInstagramContacts(data){
  if(data?.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>1000)throw Error('Neplatné Instagram kontakty.');
