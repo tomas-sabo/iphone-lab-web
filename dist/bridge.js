@@ -66,9 +66,16 @@ async function copyDraft(draft){if(typeof draft!=='string'||!draft.trim()||draft
 function appendTinderActions(parent,url,draft=null){url=validateTinderChatUrl(url);const link=element('a','Otvoriť chat v Tinderi','tinder-chat-open');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);if(draft){const copy=element('button','Skopírovať návrh','secondary tinder-draft-copy');copy.type='button';copy.onclick=()=>copyDraft(draft);parent.append(copy)}}
 export function manualContactNames(manual,index){return [...new Set([...manual,...index.map(c=>c.name)])]}
 function syncBadge(){const count=[...drafts.values()].filter(v=>v.trim()).length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
+function renderNoAction(){
+ $('tinder-no-action-count').textContent=String(noActionChats.length);
+ $('tinder-no-action-status').textContent=!token?'Pripoj bridge na načítanie uzavretých chatov.':noActionChats.length?'Tieto konverzácie boli ukončené bez ďalšej správy. Nová prijatá správa sa znovu posúdi.':'Zatiaľ nie sú načítané žiadne takto uzavreté chaty.';
+ const list=$('tinder-no-action-list');list.replaceChildren();
+ for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li');row.append(element('strong',c.name),element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
+ if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;render()};list.append(more)}
+}
 function render(){
  if(editingPanel()){renderDeferred=true;return}renderDeferred=false;
- syncBadge();$('requests').replaceChildren();
+ syncBadge();renderNoAction();$('requests').replaceChildren();
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
@@ -85,15 +92,7 @@ function render(){
    for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username];const toggle=element('button',undefined,'instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(state?.enabled===true));toggle.disabled=!token||!state||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Načítavam stav';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
    group.append(list,element('p',instagramPending?'Čakám na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
   }
-  if(source==='tinder'){
-   const resolved=element('details',undefined,'no-action-chats');resolved.open=groupOpen.get('tinder-no-action')||false;
-   const title=element('summary',`Spracované bez odpovede (${noActionChats.length})`);title.onclick=()=>groupOpen.set('tinder-no-action',!resolved.open);
-   const list=element('ul',undefined,'contact-list');
-   for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li');row.append(element('strong',c.name),element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
-   resolved.append(title,element('p','Tu sú vedome uzavreté konverzácie. Nová prijatá správa sa znovu posúdi.','hint'),list);
-   if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;groupOpen.set('tinder-no-action',true);render()};resolved.append(more)}
-   group.append(resolved,element('p',bridgeHealthText,'hint'),element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
-  }
+  if(source==='tinder')group.append(element('p',bridgeHealthText,'hint'),element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
   if(source==='whatsapp'){
    group.append(element('h3','Priradené kontakty','contact-heading'));
    const list=element('ul',undefined,'contact-list');
