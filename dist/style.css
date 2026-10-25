@@ -49,3 +49,5 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 .waiting-chat-time{flex:0 0 auto;font-size:.78rem;font-weight:650;color:#63746a}
 .waiting-chat-reason{margin:0;color:#354c44;font-size:.92rem;line-height:1.5;overflow-wrap:anywhere}
 @media(max-width:420px){.tinder-waiting>summary{padding:16px}.waiting-list{padding:0 16px 6px}#tinder-waiting-status{margin:14px 16px}.waiting-chat-header{align-items:flex-start;flex-direction:column;gap:3px}}
+
+#tinder-active-status{margin:14px 20px}
