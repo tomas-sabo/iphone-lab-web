@@ -1,4 +1,4 @@
-const VERSION='1.10.38';
+const VERSION='1.10.39';
 const button=document.getElementById('update'),status=document.getElementById('status');
 document.getElementById('version').textContent=`Verzia ${VERSION}`;
 let registration,busy=false,reloading=false,engineUpdateRequested=false;
