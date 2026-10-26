@@ -6,6 +6,7 @@ let token='',items=[],working=false;
 let noActionTimeElements=[],noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
+let instagramTimeElements=[];
 let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false,instagramDesired=null;
 const REQUEST_DRAFTS_KEY='iphone-lab-request-drafts-v1';
 function storedRequestDrafts(){try{const value=JSON.parse(localStorage.getItem(REQUEST_DRAFTS_KEY)||'[]');return Array.isArray(value)?value.filter(row=>Array.isArray(row)&&typeof row[0]==='string'&&typeof row[1]==='string'&&row[1].length<=3000):[]}catch{return []}}
@@ -73,7 +74,7 @@ function renderNoAction(){
  for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',c.waiting_since?waitingDuration(c.waiting_since):'Čas nedostupný','waiting-chat-time');if(c.waiting_since){clock.dateTime=c.waiting_since;noActionTimeElements.push([clock,c.waiting_since])}clock.title='Čas od poslednej prijatej správy';head.append(element('strong',c.name),clock);row.append(head,element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
  if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;render()};list.append(more)}
 }
-function render(){
+function render(){instagramTimeElements=[];
  if(editingPanel()){renderDeferred=true;return}renderDeferred=false;
  syncBadge();renderNoAction();$('requests').replaceChildren();
  for(const [source,name] of SOURCES){
@@ -89,7 +90,7 @@ function render(){
   group.append(heading);
   if(source==='instagram'){
    const list=element('ul',undefined,'contact-list');
-   for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username],pending=instagramPending===contact.username,checked=pending&&instagramDesired!==null?instagramDesired:state?.enabled===true;const toggle=element('button',checked?'ON':'OFF','instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(checked));toggle.setAttribute?.('aria-busy',String(pending));toggle.disabled=!token||!state||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Načítavam stav';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
+   for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username],pending=instagramPending===contact.username,checked=pending&&instagramDesired!==null?instagramDesired:state?.enabled===true;const toggle=element('button',checked?'ON':'OFF','instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(checked));toggle.setAttribute?.('aria-busy',String(pending));toggle.disabled=!token||!state||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Načítavam stav';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){appendInstagramActivity(row,contact);row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
    group.append(list,element('p',instagramPending?'Prepínač už zobrazuje tvoju voľbu. Čakám na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
   }
   if(source==='tinder')group.append(element('p',bridgeHealthText,'hint'),element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
@@ -195,7 +196,7 @@ export function waitingDuration(value,now=Date.now()){
  const days=Math.floor(hours/24);return `${days} d ${hours%24} h`;
 }
 let waitingTimeElements=[],waitingVisible=100,waitingSignature='';
-function refreshWaitingDurations(){for(const [node,since] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=waitingDuration(since)}
+function refreshWaitingDurations(){for(const [node,latest] of instagramTimeElements)node.textContent=instagramActivityText(latest);for(const [node,since] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=waitingDuration(since)}
 function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich chatov.'){
  waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
@@ -414,13 +415,27 @@ async function changeInstagramAutomation(username){
  catch(e){message(e.message);await loadInstagramAutomation()}
  finally{instagramSaving=false;render()}
 }
+export function instagramActivityText(latest,now=Date.now()){
+ if(!latest)return 'Čas poslednej správy nedostupný';
+ const arrow=latest.direction==='incoming'?'↓':'↑';
+ return arrow+' '+(latest.at?waitingDuration(latest.at,now):'Čas nedostupný');
+}
+function appendInstagramActivity(row,contact){
+ const latest=contact.last_message,box=element('div',undefined,'instagram-activity'+(latest?' is-'+latest.direction:''));
+ const clock=element('time',instagramActivityText(latest),'instagram-message-time');
+ if(latest?.at){clock.dateTime=latest.at;instagramTimeElements.push([clock,latest])}
+ clock.title=latest?.at?(latest.time_source==='send_confirmation'?'Čas od potvrdeného odoslania: ':'Čas poslednej správy: ')+new Date(latest.at).toLocaleString('sk-SK'):'';
+ box.append(clock,element('span',latest?(latest.direction==='incoming'?'Čaká na našu odpoveď':'Čakáme na odpoveď'):'Posledná správa ešte nie je načítaná','hint'));row.append(box);
+}
 export function validateInstagramContacts(data){
  if(data?.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>1000)throw Error('Neplatné Instagram kontakty.');
  const ids=new Set();return data.contacts.map(c=>{
   if(!c||typeof c.name!=='string'||!c.name.trim()||c.name.length>160||!['paired','unpaired'].includes(c.state))throw Error('Neplatný Instagram kontakt.');
   if(c.state==='unpaired')return {name:c.name,state:c.state};
   if(typeof c.username!=='string'||!/^[A-Za-z0-9_.]{1,30}$/.test(c.username)||typeof c.thread_id!=='string'||!/^\d{5,30}$/.test(c.thread_id)||ids.has(c.thread_id)||c.open_url!=='https://www.instagram.com/direct/t/'+c.thread_id+'/')throw Error('Neplatné Instagram párovanie.');
-  ids.add(c.thread_id);return {name:c.name,state:c.state,username:c.username,thread_id:c.thread_id,open_url:c.open_url};
+  let latest=null;
+  if(c.last_message!=null){const m=c.last_message;if(!['incoming','outgoing'].includes(m.direction)||!['message','send_confirmation'].includes(m.time_source)||(m.at!==null&&(typeof m.at!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(m.at)||!Number.isFinite(Date.parse(m.at))||Date.parse(m.at)>Date.now()+60000)))throw Error('Neplatný čas Instagram správy.');latest={direction:m.direction,at:m.at,time_source:m.time_source}}
+  ids.add(c.thread_id);return {name:c.name,state:c.state,username:c.username,thread_id:c.thread_id,open_url:c.open_url,...(latest?{last_message:latest}:{})};
  });
 }
 async function loadInstagramContacts(){
