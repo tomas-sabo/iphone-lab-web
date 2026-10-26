@@ -63,3 +63,6 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 .waiting-stage-label{display:block;margin:.45rem 0;color:#143d35;font-weight:700}
 
 .waiting-chat.is-sent{border-color:#39865b;background:#edf8ef}.waiting-chat.is-sent .waiting-stage-label{color:#23613d}
+
+.waiting-chat-times{display:flex;flex-direction:column;align-items:flex-end;gap:3px}.waiting-load-delay{color:#c62828;font-size:.74rem;font-weight:600}
+@media(max-width:420px){.waiting-chat-times{align-items:flex-start}}

@@ -41,3 +41,10 @@ ctx.renderWaiting([sent],1);assert.equal(ctx.preserveProgressOnFailure(),true);a
 ctx.renderWaiting([late],1);assert(!$('tinder-waiting-list').children.some(n=>n.children?.some(c=>c.textContent===late.name)));
 assert.equal(source.includes('sent-first-visible'),false);assert.equal(source.includes('setInterval(pollProgress,15000)'),true);
 console.log('Confirmed-send absolute expiry and no first-view reset; prior verified view retained on failure.');
+
+const delayed={...sent,incoming_received_at:new Date(now-105000).toISOString()};
+const delayedChecked=ctx.validatePipelineDetails([delayed])[0];assert.equal(ctx.preloadWaitText(delayedChecked),'Čakanie na načítanie: 1 min 5 s');
+assert.equal(ctx.preloadWaitText(ig),'Čakanie na načítanie: čas nedostupný');
+assert.throws(()=>ctx.validatePipelineDetails([{...sent,incoming_received_at:new Date(now).toISOString()}]));
+ctx.renderWaiting([delayedChecked],1);const times=$('tinder-waiting-list').children[0].children[0].children[1];
+assert.equal(times.children[1].textContent,'Čakanie na načítanie: 1 min 5 s');
