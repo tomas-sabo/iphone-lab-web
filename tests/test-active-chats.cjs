@@ -30,14 +30,14 @@ const checked=ctx.validatePipelineDetails([sent])[0];assert.equal(ctx.waitingSta
 assert.throws(()=>ctx.validatePipelineDetails([{...sent,expires_at:new Date(now+100001).toISOString()}]));assert.throws(()=>ctx.validatePipelineDetails([{...sent,state:'prepared'}]));
 const ig={...row(9501,'dispatched'),channel:'instagram',case_id:'ig-'+'f'.repeat(24),pipeline_stage:'waiting_rafi',stalled:false,open_url:'https://www.instagram.com/direct/t/123456789/'};assert.equal(ctx.waitingStageLabel(ctx.validatePipelineDetails([ig])[0]),'Rafi I');assert.throws(()=>ctx.validatePipelineDetails([{...ig,open_url:'https://evil.example/direct/t/123456789/'}]));assert.throws(()=>ctx.validatePipelineDetails([{...ig,case_id:'case-'+'f'.repeat(24)}]));
 const pipeline=ctx.chatProjections({...p,pipeline_details:[ig,sent]});assert.equal(pipeline.waitingCount,2);assert.equal(pipeline.active.length,250);
-ctx.renderWaiting([sent],1);assert.equal($('tinder-waiting-list').children.length,1);ctx.renderWaiting([{...sent,expires_at:new Date(now-1).toISOString()}],1);assert.equal($('tinder-waiting-list').children.length,1);
+ctx.renderWaiting([sent],1);assert.equal($('tinder-waiting-list').children.length,1);ctx.renderWaiting([{...sent,expires_at:new Date(now-1).toISOString()}],1);assert.equal($('tinder-waiting-list').children.length,0);
 console.log('Unified T/I stages, frozen confirmed timer, exact120s expiry, channel identity/URL rejection passed.');
 
-// Receipt arrives ten minutes late: display lasts120s from first observation.
-const disk=new Map();ctx.localStorage={getItem:k=>disk.get(k)||null,setItem:(k,v)=>disk.set(k,v)};
-const delayed={...sent,case_id:'case-'+'e'.repeat(24),waiting_since:new Date(now-700000).toISOString(),completed_at:new Date(now-600000).toISOString(),expires_at:new Date(now-480000).toISOString(),display_seconds:120,available_until:new Date(now+1200000).toISOString()};
-const shown=ctx.sentDisplayWindow(ctx.validatePipelineDetails([delayed])[0],now);assert.equal(ctx.visiblePipelineRows([shown],now+119999).length,1);assert.equal(ctx.visiblePipelineRows([shown],now+120000).length,0);assert.equal(ctx.pipelineDuration(shown,now),ctx.pipelineDuration(shown,now+119999));assert.equal(ctx.sentDisplayWindow(delayed,now+110000).display_expires_at,shown.display_expires_at);
-ctx.renderWaiting([delayed],1);assert.equal(ctx.preserveProgressOnFailure(),true);assert($('tinder-waiting-list').children.length>0);
-const ctx2={...ctx};vm.createContext(ctx2);vm.runInContext((helper+source.slice(source.indexOf('const WAITING_CASE='),source.indexOf('function statisticsPointer'))).replaceAll('export function','function'),ctx2);
-assert.equal(ctx2.sentDisplayWindow(delayed,now+130000).display_expires_at,shown.display_expires_at);assert.equal(ctx2.visiblePipelineRows([ctx2.sentDisplayWindow(delayed,now+130000)],now+130000).length,0);
-console.log('Delayed receipt:120s from first display, no restart after refresh/reload, frozen clock and retained view on failure passed.');
+
+// Expiry is absolute from confirmed send; refresh never adds phone time.
+const late={...sent,case_id:'case-'+'e'.repeat(24),waiting_since:new Date(now-700000).toISOString(),completed_at:new Date(now-600000).toISOString(),expires_at:new Date(now-480000).toISOString()};
+assert.equal(ctx.visiblePipelineRows(ctx.validatePipelineDetails([late]),now).length,0);
+ctx.renderWaiting([sent],1);assert.equal(ctx.preserveProgressOnFailure(),true);assert.equal($('tinder-waiting-list').children.length,1);
+ctx.renderWaiting([late],1);assert(!$('tinder-waiting-list').children.some(n=>n.children?.some(c=>c.textContent===late.name)));
+assert.equal(source.includes('sent-first-visible'),false);assert.equal(source.includes('setInterval(pollProgress,15000)'),true);
+console.log('Confirmed-send absolute expiry and no first-view reset; prior verified view retained on failure.');

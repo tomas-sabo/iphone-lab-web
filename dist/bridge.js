@@ -222,23 +222,13 @@ export function validatePipelineDetails(value){
   return {...checked,case_id:row.case_id,channel:row.channel,state:row.state};
  });
 }
-const SENT_WINDOW_KEY='iphone-lab-sent-first-visible-v1';
-function loadSentWindows(){try{const now=Date.now(),rows=JSON.parse(localStorage.getItem(SENT_WINDOW_KEY)||'[]');return new Map(Array.isArray(rows)?rows.filter(r=>Array.isArray(r)&&typeof r[0]==='string'&&Number.isFinite(r[1])&&r[1]<=now+30000&&r[1]>now-86400000):[])}catch{return new Map()}}
-const sentWindows=loadSentWindows();
-function saveSentWindows(){try{const now=Date.now(),rows=[...sentWindows].filter(r=>r[1]>now-86400000).slice(-5000);localStorage.setItem(SENT_WINDOW_KEY,JSON.stringify(rows))}catch{}}
-export function sentDisplayWindow(row,now=Date.now()){
- if(row.state!=='sent')return row;
- const key=row.channel+':'+row.case_id+':'+row.completed_at;let seen=sentWindows.get(key);
- if(seen===undefined){seen=now;sentWindows.set(key,seen);saveSentWindows()}
- return {...row,display_expires_at:new Date(seen+120000).toISOString()};
-}
-function displayExpiry(row){return row.display_expires_at||row.expires_at}
+function displayExpiry(row){return row.expires_at}
 export function visiblePipelineRows(rows,now=Date.now()){return rows.filter(row=>!displayExpiry(row)||Date.parse(displayExpiry(row))>now)}
 export function preserveProgressOnFailure(){
  if(waitingRows!==null){$('tinder-waiting-status').textContent='Obnovenie zlyhalo. Zobrazený je posledný overený priebeh; skús synchronizáciu.';return true}
  clearWaiting('Priebeh sa zatiaľ nepodarilo načítať. Skús synchronizáciu.');return false;
 }
-export function pipelineDuration(row,now=Date.now()){const end=row.completed_at?Date.parse(row.completed_at):now,seconds=Math.max(0,Math.floor((end-Date.parse(row.waiting_since))/1000));return seconds<60?seconds+' s':waitingDuration(row.waiting_since,end)}
+export function pipelineDuration(row,now=Date.now()){const end=row.completed_at?Date.parse(row.completed_at):now,seconds=Math.max(0,Math.floor((end-Date.parse(row.waiting_since))/1000));return seconds<60?seconds+' s':seconds<3600?Math.floor(seconds/60)+' min '+seconds%60+' s':Math.floor(seconds/3600)+' h '+Math.floor(seconds%3600/60)+' min '+seconds%60+' s'}
 export function chatProjections(p){
  const waiting=validateWaitingDetails(p.awaiting_details),count=Number.isSafeInteger(p.waiting_count)?p.waiting_count:p.awaiting_operator;
  if(waiting&&Number.isSafeInteger(count)&&waiting.length!==count)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');
@@ -263,7 +253,7 @@ function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich cha
  waitingRows=null;waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
 function renderWaiting(details,aggregate){
- if(details!==null){const next=details.map(row=>sentDisplayWindow(row));const keys=new Set(next.map(row=>row.channel+':'+row.case_id));for(const old of visiblePipelineRows(waitingRows||[]))if(old.state==='sent'&&!keys.has(old.channel+':'+old.case_id))next.push(old);details=next}
+ if(details!==null){const next=details;const keys=new Set(next.map(row=>row.channel+':'+row.case_id));for(const old of visiblePipelineRows(waitingRows||[]))if(old.state==='sent'&&!keys.has(old.channel+':'+old.case_id))next.push(old);details=next}
  waitingRows=details;details=details===null?null:visiblePipelineRows(details);
  const signature=JSON.stringify(details);if(signature!==waitingSignature){waitingSignature=signature;waitingVisible=100}
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
@@ -705,6 +695,11 @@ async function pollBridge(){
  try{await refresh()}catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;render()}
 }
+async function pollProgress(){
+ if(!token||working||progressLoading||editingPanel()||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;
+ await loadProgress();
+}
+setInterval(pollProgress,15000);
 setInterval(pollBridge,60000);setInterval(refreshWaitingDurations,1000);setInterval(expirePipelineRows,1000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working||editingPanel())return;
