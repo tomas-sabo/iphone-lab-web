@@ -161,14 +161,15 @@ function resetStatistics(){resetOriginalStatistics();statisticsManifest=null;sta
 const SHA256=/^[a-f0-9]{64}$/;
 const WAITING_CASE=/^case-[a-f0-9]{24}$/;
 const WAITING_STATES=new Set(['needs_user','uncertain','attempt_started','rejected','transport_blocked','open_pending','stale','prepared','dispatched','reviewed','user_approved','queued','awaiting_reply']);
-const PIPELINE_STAGES=new Set(['loaded','waiting_rafi','waiting_send','sending','held','rafi_question','tinder_question']);
+const PIPELINE_STAGES=new Set(['loaded','waiting_rafi','waiting_send','sending','held','sent','rafi_question','tinder_question']);
 export function waitingStageLabel(row){
- if(row.unblock?.route==='operator')return row.unblock.owner==='Rafi'?'Rafi čaká na dotaz':row.unblock.owner==='Tinder'?'Tinder čaká na dotaz':'Čaká na dotaz';
- return ({loaded:'Načítané',waiting_rafi:'Čakajúce na Rafika',waiting_send:'Čakajúce na odoslanie',sending:'Prebieha odosielanie',held:'Stojace · požiadavka na odblokovanie'})[row.pipeline_stage]||({queued:'Načítané',prepared:'Načítané',dispatched:'Čakajúce na Rafika',reviewed:'Čakajúce na odoslanie',user_approved:'Načítané'})[row.state]||'Stojace · požiadavka na odblokovanie';
+ const tag=row.channel==='instagram'?'I':'T';
+ if(row.unblock?.route==='operator')return (row.unblock.owner==='Rafi'?'Rafi čaká na dotaz':row.unblock.owner==='Tinder'?'Tinder čaká na dotaz':'Čaká na dotaz')+' '+tag;
+ return (({loaded:'Načítané',waiting_rafi:'Rafi',waiting_send:'Odosielané',sending:'Odosielané',sent:'Odoslané',held:'Stojace'})[row.pipeline_stage]||({queued:'Načítané',prepared:'Načítané',dispatched:'Rafi',reviewed:'Odosielané',user_approved:'Načítané'})[row.state]||'Stojace')+' '+tag;
 }
 function validateUnblock(task){
  if(!task||!['operator','technical'].includes(task.route)||!['published','delivering','open'].includes(task.status)||typeof task.question!=='string'||!task.question.trim()||task.question.length>1000||typeof task.id!=='string'||!(task.route==='operator'?UUID.test(task.id):/^recovery-[a-f0-9]{24}$/.test(task.id)))throw Error('Neplatný dotaz na odblokovanie.');
- if(task.owner!==undefined&&!['Rafi','Tinder'].includes(task.owner))throw Error('Neplatný zdroj dotazu.');
+ if(task.owner!==undefined&&!['Rafi','Tinder','Instagram'].includes(task.owner))throw Error('Neplatný zdroj dotazu.');
  return task;
 }
 function appendUnblock(card,row){
@@ -210,6 +211,19 @@ export function validateActiveDetails(value){
   const checked=validateWaitingDetails([row])[0];ids.add(checked.case_id);return checked;
  });
 }
+export function validatePipelineDetails(value){
+ if(!Array.isArray(value)||value.length>10000)throw Error('Neplatný priebeh chatov.');
+ const ids=new Set();return value.map(row=>{
+  const ig=row?.channel==='instagram';if(!['tinder','instagram'].includes(row?.channel)||!new RegExp(ig?'^ig-[a-f0-9]{24}$':'^case-[a-f0-9]{24}$').test(row.case_id)||ids.has(row.channel+row.case_id))throw Error('Neplatná identita priebehu.');ids.add(row.channel+row.case_id);
+  const sent=row.state==='sent';const checked=validateWaitingDetails([{...row,case_id:ig?'case-'+row.case_id.slice(3):row.case_id,state:sent?'reviewed':row.state,...(ig?{open_url:undefined}:{})}])[0];
+  if(ig){const url=new URL(row.open_url);if(url.origin!=='https://www.instagram.com'||!/^\/direct\/t\/\d{5,30}\/$/.test(url.pathname)||url.search||url.hash||url.username||url.password)throw Error('Neplatný Instagram chat.');checked.open_url=url.href}
+  if(sent){const end=Date.parse(row.completed_at),expiry=Date.parse(row.expires_at);if(row.pipeline_stage!=='sent'||row.stalled!==false||!Number.isFinite(end)||end<Date.parse(row.waiting_since)||end>Date.now()+30000||expiry!==end+120000)throw Error('Neplatné potvrdenie odoslania.');checked.completed_at=row.completed_at;checked.expires_at=row.expires_at}
+  else if(row.pipeline_stage==='sent'||row.completed_at!==undefined||row.expires_at!==undefined)throw Error('Odoslanie nie je potvrdené.');
+  return {...checked,case_id:row.case_id,channel:row.channel,state:row.state};
+ });
+}
+export function visiblePipelineRows(rows,now=Date.now()){return rows.filter(row=>!row.expires_at||Date.parse(row.expires_at)>now)}
+export function pipelineDuration(row,now=Date.now()){const end=row.completed_at?Date.parse(row.completed_at):now,seconds=Math.max(0,Math.floor((end-Date.parse(row.waiting_since))/1000));return seconds<60?seconds+' s':waitingDuration(row.waiting_since,end)}
 export function chatProjections(p){
  const waiting=validateWaitingDetails(p.awaiting_details),count=Number.isSafeInteger(p.waiting_count)?p.waiting_count:p.awaiting_operator;
  if(waiting&&Number.isSafeInteger(count)&&waiting.length!==count)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');
@@ -218,7 +232,8 @@ export function chatProjections(p){
  const ours=waiting?.filter(row=>row.state!=='awaiting_reply')??null;
  const ids=new Set(ours?.map(row=>row.case_id)||[]);
  if(active?.some(row=>ids.has(row.case_id)))throw Error('Chat nemôže byť v oboch zoznamoch.');
- return {waiting:ours,waitingCount:ours?ours.length:Number.isSafeInteger(count)?count:0,active};
+ const pipeline=p.pipeline_details===undefined?null:validatePipelineDetails(p.pipeline_details);
+ return {waiting:pipeline||ours,waitingCount:pipeline?pipeline.length:ours?ours.length:Number.isSafeInteger(count)?count:0,active};
 }
 export function waitingDuration(value,now=Date.now()){
  const minutes=Math.max(0,Math.floor((now-Date.parse(value))/60000));
@@ -226,17 +241,19 @@ export function waitingDuration(value,now=Date.now()){
  const hours=Math.floor(minutes/60);if(hours<24)return `${hours} h ${minutes%60} min`;
  const days=Math.floor(hours/24);return `${days} d ${hours%24} h`;
 }
-let waitingTimeElements=[],waitingVisible=100,waitingSignature='';
-function refreshWaitingDurations(){for(const [node,latest] of instagramTimeElements)node.textContent=instagramActivityText(latest);for(const [node,since] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=waitingDuration(since)}
+let waitingTimeElements=[],waitingVisible=100,waitingSignature='',waitingRows=null;
+function expirePipelineRows(){if(waitingRows?.some(row=>row.expires_at&&Date.parse(row.expires_at)<=Date.now()))renderWaiting(visiblePipelineRows(waitingRows),0)}
+function refreshWaitingDurations(){for(const [node,latest] of instagramTimeElements)node.textContent=instagramActivityText(latest);for(const [node,since,row] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=row?pipelineDuration(row):waitingDuration(since)}
 function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich chatov.'){
- waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
+ waitingRows=null;waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
 function renderWaiting(details,aggregate){
+ waitingRows=details;details=details===null?null:visiblePipelineRows(details);
  const signature=JSON.stringify(details);if(signature!==waitingSignature){waitingSignature=signature;waitingVisible=100}
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
- count.textContent=String(details.length);status.textContent=details.length?`Čaká na našu odpoveď: ${details.length}${waitingVisible<details.length?' · Zobrazené '+waitingVisible+' z '+details.length:''}.`:'Žiadny chat nečaká na tvoju odpoveď.';
- for(const row of details.slice(0,waitingVisible)){const card=element('article',undefined,'waiting-chat'+(row.stalled?' is-stalled':'')),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head);card.append(element('strong',waitingStageLabel(row),row.stalled?'waiting-stalled-label':'waiting-stage-label'));if(row.stalled&&!['rafi_question','tinder_question'].includes(row.pipeline_stage)&&row.unblock?.route!=='operator')card.append(element('small','Zaseknuté','waiting-stalled-label'));card.append(element('p',row.reason,'waiting-chat-reason'));appendUnblock(card,row);if(row.open_url)appendTinderActions(card,row.open_url);list.append(card)}
+ count.textContent=String(details.length);status.textContent=details.length?`Priebeh chatov: ${details.length}${waitingVisible<details.length?' · Zobrazené '+waitingVisible+' z '+details.length:''}.`:'Žiadny chat nečaká na tvoju odpoveď.';
+ for(const row of details.slice(0,waitingVisible)){const card=element('article',undefined,'waiting-chat'+(row.stalled?' is-stalled':'')+(row.pipeline_stage==='sent'?' is-sent':'')),head=element('div',undefined,'waiting-chat-header'),clock=element('time',pipelineDuration(row),'waiting-chat-time');clock.dateTime=row.waiting_since;if(!row.completed_at)waitingTimeElements.push([clock,row.waiting_since,row]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head);card.append(element('strong',waitingStageLabel(row),row.stalled?'waiting-stalled-label':'waiting-stage-label'));if(row.stalled&&!['rafi_question','tinder_question'].includes(row.pipeline_stage)&&row.unblock?.route!=='operator')card.append(element('small','Zaseknuté','waiting-stalled-label'));card.append(element('p',row.reason,'waiting-chat-reason'));appendUnblock(card,row);if(row.open_url){if(row.channel==='instagram'){const link=element('a','Otvoriť Instagram chat','button-link');link.href=row.open_url;link.target='_blank';link.rel='noopener noreferrer';card.append(link)}else appendTinderActions(card,row.open_url)}list.append(card)}
  if(waitingVisible<details.length){const more=element('button','Zobraziť ďalších '+Math.min(100,details.length-waitingVisible),'secondary');more.type='button';more.onclick=()=>{waitingVisible+=100;renderWaiting(details,aggregate)};list.append(more)}
 }
 
@@ -253,7 +270,7 @@ function drawActive(){
  const shown=Math.min(activeVisible,rows.length);
  $('tinder-active-status').textContent=rows.length?`Čakáme na odpoveď druhej strany: ${rows.length}${shown<rows.length?' · Zobrazené '+shown+' z '+rows.length:''}.`:'Žiadny aktívny chat nečaká na odpoveď druhej strany.';
  for(const row of rows.slice(0,shown)){
-  const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;activeTimeElements.push([clock,row.waiting_since]);
+  const card=element('article',undefined,'waiting-chat'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',pipelineDuration(row),'waiting-chat-time');clock.dateTime=row.waiting_since;activeTimeElements.push([clock,row.waiting_since]);
   head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head,element('p',row.reason,'waiting-chat-reason'));appendTinderActions(card,row.open_url);list.append(card);
  }
  if(shown<rows.length){const more=element('button','Zobraziť ďalších '+Math.min(100,rows.length-shown),'secondary');more.type='button';more.onclick=()=>{activeVisible+=100;drawActive()};list.append(more)}
@@ -672,7 +689,7 @@ async function pollBridge(){
  try{await refresh()}catch(e){message(e.message||'Synchronizácia sa nepodarila.')}
  finally{working=false;render()}
 }
-setInterval(pollBridge,60000);setInterval(refreshWaitingDurations,30000);
+setInterval(pollBridge,60000);setInterval(refreshWaitingDurations,1000);setInterval(expirePipelineRows,1000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working||editingPanel())return;
  if(!token){await restorePairing();return}
