@@ -3,7 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
-let inactiveRequestIds=new Set();
+let inactiveRequestIds=new Set(),operatorIndexSnapshot=null;
 const NO_ACTION_REFRESH_PATH='/contents/operator/tinder-no-action-refresh.json',NO_ACTION_PENDING_KEY='iphone-lab-no-action-refresh-v1';
 let noActionRefreshBusy=false,noActionRefreshPending=null,noActionRefreshMessage='',noActionRefreshChecked=0;
 try{noActionRefreshPending=JSON.parse(localStorage.getItem(NO_ACTION_PENDING_KEY)||'null')}catch{}
@@ -30,7 +30,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){operatorIndexSnapshot=null;noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -235,9 +235,9 @@ function appendUnblock(card,row){
  }else box.append(element('small','Evidované pre supervízora. Technické overenie nevyžaduje tvoje schválenie.'));
  card.append(box);
 }
-async function applyOperatorInbox(p){
+async function applyOperatorInbox(p,authoritative=false){
  if(p.operator_inbox===undefined&&p.operator_questions===undefined)return;
- const scoped=p.operator_inbox??[],all=p.operator_questions??[],inactive=p.operator_inactive_ids??[];
+ const scoped=p.operator_inbox??[],all=(authoritative?p.operator_questions:operatorIndexSnapshot??p.operator_questions)??[],inactive=p.operator_inactive_ids??[];
  if(!Array.isArray(scoped)||!Array.isArray(all)||scoped.length>100||all.length>100||!Array.isArray(inactive)||inactive.length>10000||inactive.some(id=>!UUID.test(id)))throw Error('Neplatný snapshot dotazov.');
  const linked=new Map((p.awaiting_details||[]).filter(r=>r.unblock?.route==='operator').map(r=>[r.unblock.id,r.case_id])),fresh=new Map(),removed=new Set([...inactive,...inactiveRequestIds]);
  for(const [list,requireLink] of [[scoped,true],[all,false]])for(const item of list){
@@ -255,7 +255,7 @@ async function applyOperatorInbox(p){
   const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
   byId.set(id,same&&old.record.decision?old:{...old,...item,sha:item.sha??(same?old.sha:null)??null});
  }
- items=[...byId.values()];if(!editingPanel())render();
+ items=[...byId.values()];if(authoritative)operatorIndexSnapshot=all;if(!editingPanel())render();
 }
 export function validateWaitingDetails(value){
  if(value===undefined)return null;
@@ -705,7 +705,7 @@ async function readProgress(){
  }catch{showAutomation(null);preserveProgressOnFailure();$('tinder-overall-count').textContent='Aktuálny počet nie je overený.';$('tinder-count').textContent='Aktuálny stav nie je overený.';$('tinder-overall-meter').value=0;$('tinder-meter').value=0;renderChannelTotals(null,'Aktuálny počet nie je overený.');$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Posledné overené chaty zostávajú zobrazené.';$('tinder-eta').textContent='Skontroluj pripojenie MacBooku a zopakuj synchronizáciu.'}
 }
 export function validateRequestStatus(data){const chat_links=data?.chat_links===undefined?{}:data.chat_links,chat_actions=data?.chat_actions===undefined?{}:data.chat_actions;if(data?.schema_version!==1||!Array.isArray(data.inactive_ids)||data.inactive_ids.length>10000||!data.inactive_ids.every(id=>UUID.test(id))||!chat_links||typeof chat_links!=='object'||Array.isArray(chat_links)||Object.keys(chat_links).length>100||!chat_actions||typeof chat_actions!=='object'||Array.isArray(chat_actions)||Object.keys(chat_actions).length>100)throw Error('Stav aktívnych dotazov má neplatný formát.');const links=new Map(),actions=new Map();for(const [id,url] of Object.entries(chat_links)){if(!UUID.test(id))throw Error('Stav aktívnych dotazov má neplatný formát.');links.set(id,validateTinderChatUrl(url))}for(const [id,action] of Object.entries(chat_actions)){if(!UUID.test(id)||!action||typeof action!=='object'||Object.keys(action).some(k=>!['open_url','draft'].includes(k))||typeof action.draft!=='string'||!action.draft.trim()||action.draft.length>1500)throw Error('Stav aktívnych dotazov má neplatný formát.');const open_url=validateTinderChatUrl(action.open_url);if(links.get(id)!==open_url)throw Error('Stav aktívnych dotazov má neplatný formát.');actions.set(id,{open_url,draft:action.draft})}return {inactive:new Set(data.inactive_ids),links,actions}}
-async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined){inactiveRequestIds=new Set([...inactiveRequestIds,...status.inactive]);await applyOperatorInbox({operator_questions:data.operator_questions,operator_inactive_ids:[...inactiveRequestIds]})}return status}
+async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined){inactiveRequestIds=new Set([...inactiveRequestIds,...status.inactive]);await applyOperatorInbox({operator_questions:data.operator_questions,operator_inactive_ids:[...inactiveRequestIds]},true)}return status}
 async function refresh(){
  const controller=new AbortController();refreshController=controller;
  const timer=setTimeout(()=>controller.abort(),REFRESH_TIMEOUT_MS);
