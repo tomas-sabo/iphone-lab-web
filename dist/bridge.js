@@ -230,7 +230,7 @@ export function preserveProgressOnFailure(){
  clearWaiting('Priebeh sa zatiaľ nepodarilo načítať. Skús synchronizáciu.');return false;
 }
 export function pipelineDuration(row,now=Date.now()){const end=row.completed_at?Date.parse(row.completed_at):now,seconds=Math.max(0,Math.floor((end-Date.parse(row.waiting_since))/1000));return seconds<60?seconds+' s':seconds<3600?Math.floor(seconds/60)+' min '+seconds%60+' s':Math.floor(seconds/3600)+' h '+Math.floor(seconds%3600/60)+' min '+seconds%60+' s'}
-export function preloadWaitText(row){if(!row.incoming_received_at)return 'Čakanie na načítanie: čas nedostupný';return 'Čakanie na načítanie: '+pipelineDuration({waiting_since:row.incoming_received_at,completed_at:row.waiting_since})}
+export function preloadWaitText(row){if(!row.incoming_received_at)return '—';return pipelineDuration({waiting_since:row.incoming_received_at,completed_at:row.waiting_since})}
 export function chatProjections(p){
  const waiting=validateWaitingDetails(p.awaiting_details),count=Number.isSafeInteger(p.waiting_count)?p.waiting_count:p.awaiting_operator;
  if(waiting&&Number.isSafeInteger(count)&&waiting.length!==count)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');
