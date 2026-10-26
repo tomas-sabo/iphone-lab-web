@@ -3,7 +3,7 @@ const SOURCES=[['architekt','Architekt'],['tinder','Tinder'],['rafi','Rafi'],['r
 const API=`https://api.github.com/repos/${REPO}`;
 const $=id=>document.getElementById(id);
 let token='',items=[],working=false;
-let noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
+let noActionTimeElements=[],noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.';
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false,instagramDesired=null;
@@ -69,8 +69,8 @@ function syncBadge(){const count=[...drafts.values()].filter(v=>v.trim()).length
 function renderNoAction(){
  $('tinder-no-action-count').textContent=String(noActionChats.length);
  $('tinder-no-action-status').textContent=!token?'Pripoj bridge na načítanie uzavretých chatov.':noActionChats.length?'Tieto konverzácie boli ukončené bez ďalšej správy. Nová prijatá správa sa znovu posúdi.':'Zatiaľ nie sú načítané žiadne takto uzavreté chaty.';
- const list=$('tinder-no-action-list');list.replaceChildren();
- for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li');row.append(element('strong',c.name),element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
+ const list=$('tinder-no-action-list');list.replaceChildren();noActionTimeElements=[];
+ for(const c of noActionChats.slice(0,noActionVisible)){const row=element('li'),head=element('div',undefined,'waiting-chat-header'),clock=element('time',c.waiting_since?waitingDuration(c.waiting_since):'Čas nedostupný','waiting-chat-time');if(c.waiting_since){clock.dateTime=c.waiting_since;noActionTimeElements.push([clock,c.waiting_since])}clock.title='Čas od poslednej prijatej správy';head.append(element('strong',c.name),clock);row.append(head,element('p','Ukončené bez ďalšej správy · '+c.reason,'hint'));appendTinderActions(row,c.open_url);list.append(row)}
  if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;render()};list.append(more)}
 }
 function render(){
@@ -195,7 +195,7 @@ export function waitingDuration(value,now=Date.now()){
  const days=Math.floor(hours/24);return `${days} d ${hours%24} h`;
 }
 let waitingTimeElements=[],waitingVisible=100,waitingSignature='';
-function refreshWaitingDurations(){for(const [node,since] of [...waitingTimeElements,...activeTimeElements])node.textContent=waitingDuration(since)}
+function refreshWaitingDurations(){for(const [node,since] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=waitingDuration(since)}
 function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich chatov.'){
  waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
@@ -523,7 +523,7 @@ export function bridgeHealthMessage(health){
 export function validateNoActionDetails(rows){
  if(rows===undefined)return [];
  if(!Array.isArray(rows)||rows.length>10000)throw Error('Neplatné uzavreté chaty.');const ids=new Set();
- return rows.map(row=>{if(!row||typeof row.case_id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(row.case_id)||ids.has(row.case_id)||row.state!=='no_action'||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000)throw Error('Neplatný uzavretý chat.');validateTinderChatUrl(row.open_url);ids.add(row.case_id);return row});
+ return rows.map(row=>{if(!row||typeof row.case_id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(row.case_id)||ids.has(row.case_id)||row.state!=='no_action'||typeof row.name!=='string'||!row.name.trim()||row.name.length>120||typeof row.reason!=='string'||!row.reason.trim()||row.reason.length>1000)throw Error('Neplatný uzavretý chat.');validateTinderChatUrl(row.open_url);if(row.waiting_since!==undefined&&(typeof row.waiting_since!=='string'||!Number.isFinite(Date.parse(row.waiting_since))||Date.parse(row.waiting_since)<=0||Date.parse(row.waiting_since)>Date.now()+300000))throw Error('Neplatný čas prijatej správy.');ids.add(row.case_id);return row});
 }
 function loadProgress(){if(!progressLoading)progressLoading=readProgress().finally(()=>{progressLoading=null});return progressLoading}
 async function readProgress(){
