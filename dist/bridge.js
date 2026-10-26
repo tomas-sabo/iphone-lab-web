@@ -237,7 +237,7 @@ function appendUnblock(card,row){
 }
 async function applyOperatorInbox(p,authoritative=false){
  if(p.operator_inbox===undefined&&p.operator_questions===undefined)return;
- const scoped=p.operator_inbox??[],all=(authoritative?p.operator_questions:operatorIndexSnapshot??p.operator_questions)??[],inactive=p.operator_inactive_ids??[];
+ const scoped=p.operator_inbox??[],all=p.operator_questions??[],inactive=p.operator_inactive_ids??[];
  if(!Array.isArray(scoped)||!Array.isArray(all)||scoped.length>100||all.length>100||!Array.isArray(inactive)||inactive.length>10000||inactive.some(id=>!UUID.test(id)))throw Error('Neplatný snapshot dotazov.');
  const linked=new Map((p.awaiting_details||[]).filter(r=>r.unblock?.route==='operator').map(r=>[r.unblock.id,r.case_id])),fresh=new Map(),removed=new Set([...inactive,...inactiveRequestIds]);
  for(const [list,requireLink] of [[scoped,true],[all,false]])for(const item of list){
@@ -249,7 +249,8 @@ async function applyOperatorInbox(p,authoritative=false){
   const prior=fresh.get(id);if(prior&&prior.record.request_digest!==record.request_digest)throw Error('Konfliktný snapshot dotazu.');
   fresh.set(id,{sha:item.sha??prior?.sha??null,record,from_progress:true,open_url:record.request.chat_url||null});
  }
- const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)&&!i.from_progress&&!(!i.record.decision&&['rafi','tinder'].includes(i.record.request.source)&&WAITING_CASE.test(i.record.request.context_ref))).map(i=>[i.record.request.id,i]));
+ const protectedIds=new Set((operatorIndexSnapshot??[]).map(x=>x.record.request.id));
+ const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)&&(protectedIds.has(i.record.request.id)||(!i.from_progress&&!(!i.record.decision&&['rafi','tinder'].includes(i.record.request.source)&&WAITING_CASE.test(i.record.request.context_ref))))).map(i=>[i.record.request.id,i]));
  for(const [id,item] of fresh){
   if(removed.has(id))continue;
   const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
