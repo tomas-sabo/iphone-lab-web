@@ -20,3 +20,7 @@ $('tinder-waiting-list').children.at(-1).onclick();assert.equal($('tinder-waitin
 assert.equal(ctx.validateWaitingDetails([row(9000,'queued')])[0].stalled,false);
 assert.throws(()=>ctx.validateWaitingDetails([{...row(9001,'prepared'),stalled:'yes'}]));
 console.log('Active chats: distinct projections, count consistency, safe URLs, >100 complete rows, incremental rendering and section order passed.');
+
+for(const [stage,label] of [['loaded','Načítané'],['waiting_rafi','Čakajúce na Rafika'],['waiting_send','Čakajúce na odoslanie']]){const r={...row(9001,'dispatched'),pipeline_stage:stage,stalled:false};assert.equal(ctx.waitingStageLabel(ctx.validateWaitingDetails([r])[0]),label)}
+for(const owner of ['Rafi','Tinder']){ctx.UUID=/^[a-f0-9-]{36}$/;const r={...row(9002,'needs_user'),pipeline_stage:owner==='Rafi'?'rafi_question':'tinder_question',stalled:true,unblock:{id:'11111111-1111-4111-8111-111111111111',owner,route:'operator',status:'published',question:'One exact question?'}};assert.equal(ctx.waitingStageLabel(ctx.validateWaitingDetails([r])[0]),owner+' čaká na dotaz');assert.throws(()=>ctx.validateWaitingDetails([{...r,unblock:undefined}]))}
+assert.throws(()=>ctx.validateWaitingDetails([{...row(9003,'prepared'),pipeline_stage:'imaginary'}]));

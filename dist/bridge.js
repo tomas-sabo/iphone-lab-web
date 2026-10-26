@@ -161,8 +161,14 @@ function resetStatistics(){resetOriginalStatistics();statisticsManifest=null;sta
 const SHA256=/^[a-f0-9]{64}$/;
 const WAITING_CASE=/^case-[a-f0-9]{24}$/;
 const WAITING_STATES=new Set(['needs_user','uncertain','attempt_started','rejected','transport_blocked','open_pending','stale','prepared','dispatched','reviewed','user_approved','queued','awaiting_reply']);
+const PIPELINE_STAGES=new Set(['loaded','waiting_rafi','waiting_send','sending','held','rafi_question','tinder_question']);
+export function waitingStageLabel(row){
+ if(row.unblock?.route==='operator')return row.unblock.owner==='Rafi'?'Rafi čaká na dotaz':row.unblock.owner==='Tinder'?'Tinder čaká na dotaz':'Čaká na dotaz';
+ return ({loaded:'Načítané',waiting_rafi:'Čakajúce na Rafika',waiting_send:'Čakajúce na odoslanie',sending:'Prebieha odosielanie',held:'Stojace · požiadavka na odblokovanie'})[row.pipeline_stage]||({queued:'Načítané',prepared:'Načítané',dispatched:'Čakajúce na Rafika',reviewed:'Čakajúce na odoslanie',user_approved:'Načítané'})[row.state]||'Stojace · požiadavka na odblokovanie';
+}
 function validateUnblock(task){
  if(!task||!['operator','technical'].includes(task.route)||!['published','delivering','open'].includes(task.status)||typeof task.question!=='string'||!task.question.trim()||task.question.length>1000||typeof task.id!=='string'||!(task.route==='operator'?UUID.test(task.id):/^recovery-[a-f0-9]{24}$/.test(task.id)))throw Error('Neplatný dotaz na odblokovanie.');
+ if(task.owner!==undefined&&!['Rafi','Tinder'].includes(task.owner))throw Error('Neplatný zdroj dotazu.');
  return task;
 }
 function appendUnblock(card,row){
@@ -191,7 +197,9 @@ export function validateWaitingDetails(value){
   let open_url=null;if(row.open_url!==undefined)open_url=validateTinderChatUrl(row.open_url);
   if(row.stalled!==undefined&&typeof row.stalled!=='boolean')throw Error('Neplatný stav čakania.');
   if(row.unblock!==undefined)validateUnblock(row.unblock);
-  return {case_id:row.case_id,name:row.name.trim(),reason:row.reason.trim(),state:row.state,waiting_since:row.waiting_since,stalled:row.stalled??['needs_user','uncertain','attempt_started','rejected','transport_blocked','open_pending','stale'].includes(row.state),...(row.unblock?{unblock:row.unblock}:{}),...(open_url?{open_url}:{})};
+  if(row.pipeline_stage!==undefined&&!PIPELINE_STAGES.has(row.pipeline_stage))throw Error('Neplatná fáza čakania.');
+  if(['rafi_question','tinder_question'].includes(row.pipeline_stage)&&(!row.stalled||row.unblock?.route!=='operator'||row.unblock.owner!==({rafi_question:'Rafi',tinder_question:'Tinder'})[row.pipeline_stage]))throw Error('Fáza dotazu nemá priradený dotaz.');
+  return {case_id:row.case_id,...(row.pipeline_stage?{pipeline_stage:row.pipeline_stage}:{}),name:row.name.trim(),reason:row.reason.trim(),state:row.state,waiting_since:row.waiting_since,stalled:row.stalled??['needs_user','uncertain','attempt_started','rejected','transport_blocked','open_pending','stale'].includes(row.state),...(row.unblock?{unblock:row.unblock}:{}),...(open_url?{open_url}:{})};
  });
 }
 export function validateActiveDetails(value){
@@ -228,7 +236,7 @@ function renderWaiting(details,aggregate){
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();
  if(details===null){count.textContent=String(aggregate||0);status.textContent=aggregate?'Podrobnosti čakajúcich chatov ešte nie sú v súhrne bridge. Obnov synchronizáciu po aktualizácii MacBooku.':'Žiadny chat nečaká na tvoju odpoveď.';return}
  count.textContent=String(details.length);status.textContent=details.length?`Čaká na našu odpoveď: ${details.length}${waitingVisible<details.length?' · Zobrazené '+waitingVisible+' z '+details.length:''}.`:'Žiadny chat nečaká na tvoju odpoveď.';
- for(const row of details.slice(0,waitingVisible)){const card=element('article',undefined,'waiting-chat'+(row.stalled?' is-stalled':'')),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head);if(row.stalled)card.append(element('strong','Zaseknuté','waiting-stalled-label'));card.append(element('p',row.reason,'waiting-chat-reason'));appendUnblock(card,row);if(row.open_url)appendTinderActions(card,row.open_url);list.append(card)}
+ for(const row of details.slice(0,waitingVisible)){const card=element('article',undefined,'waiting-chat'+(row.stalled?' is-stalled':'')),head=element('div',undefined,'waiting-chat-header'),clock=element('time',waitingDuration(row.waiting_since),'waiting-chat-time');clock.dateTime=row.waiting_since;waitingTimeElements.push([clock,row.waiting_since]);head.append(element('span',row.name,'waiting-chat-name'),clock);card.append(head);card.append(element('strong',waitingStageLabel(row),row.stalled?'waiting-stalled-label':'waiting-stage-label'));if(row.stalled&&!['rafi_question','tinder_question'].includes(row.pipeline_stage)&&row.unblock?.route!=='operator')card.append(element('small','Zaseknuté','waiting-stalled-label'));card.append(element('p',row.reason,'waiting-chat-reason'));appendUnblock(card,row);if(row.open_url)appendTinderActions(card,row.open_url);list.append(card)}
  if(waitingVisible<details.length){const more=element('button','Zobraziť ďalších '+Math.min(100,details.length-waitingVisible),'secondary');more.type='button';more.onclick=()=>{waitingVisible+=100;renderWaiting(details,aggregate)};list.append(more)}
 }
 
