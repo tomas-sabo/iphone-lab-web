@@ -80,7 +80,7 @@ function render(){instagramTimeElements=[];
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
-  const matches=source==='instagram'?[]:items.filter(item=>item.record.request.source===source);
+  const matches=items.filter(item=>item.record.request.source===source&&(source!=='instagram'||item.record.request.kind==='operator_question'));
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
@@ -119,7 +119,7 @@ function render(){instagramTimeElements=[];
    if(!done)card.append(element('h3',r.title,'request-title'));
    const chatUrl=item.open_url||r.chat_url;if(chatUrl&&['tinder','rafi'].includes(source))appendTinderActions(card,chatUrl,item.draft);
    card.append(element('p',r.body,'context'),element('h4','Čo schvaľuješ'),element('p',r.proposed_action,'action'));
-   if(item.sha===null)card.append(element('p','Dotaz sa doručuje do bridge. Vyjadrenie si môžeš zatiaľ rozpísať.','hint'));
+   if(item.sha===null)card.append(element('p','Stav doručenia zatiaľ nie je potvrdený. Pri odoslaní overím aktuálny dotaz priamo v bridge.','hint'));
    card.append(element('small',`Referencia: ${r.context_ref} · Platí do ${new Date(r.expires_at).toLocaleString('sk-SK')}`));
    if(d){
     card.append(element('p',d.revoked_at?'Trvalé povolenie odvolané':d.permission==='always'?'Povolené trvalo':({approved:'Schválené ✓',rejected:'Zamietnuté',commented:'Vyjadrenie odoslané'})[d.outcome],'decision'));
@@ -128,11 +128,11 @@ function render(){instagramTimeElements=[];
    }else if(expired)card.append(element('p','Platnosť vypršala. Vyžiadaj novú požiadavku.'));
    else{
     const controls=element('div',undefined,'decision-buttons');
-    for(const [outcome,label,permission] of (r.kind==='work_file'?[['approved','Povoliť raz','once'],['approved','Povoliť trvalo','always'],['rejected','Zakázať']]:[['approved','Schváliť'],['rejected','Zamietnuť']])){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working||item.sha===null;b.onclick=()=>decide(item,outcome,'',permission);controls.append(b)}
+    for(const [outcome,label,permission] of (r.kind==='work_file'?[['approved','Povoliť raz','once'],['approved','Povoliť trvalo','always'],['rejected','Zakázať']]:[['approved','Schváliť'],['rejected','Zamietnuť']])){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working;b.onclick=()=>decide(item,outcome,'',permission);controls.append(b)}
     card.append(controls);
     const label=element('label','Tvoje vyjadrenie');label.htmlFor='comment-'+r.id;
     const input=element('textarea');input.id=label.htmlFor;input.rows=3;input.maxLength=3000;input.placeholder='Napíš odpoveď alebo doplnenie…';input.value=drafts.get(r.id)||'';input.disabled=working;input.oninput=()=>{drafts.set(r.id,input.value);saveRequestDrafts();syncBadge()};
-    const send=element('button','Odoslať vyjadrenie','secondary');send.type='button';send.disabled=working||item.sha===null;send.onclick=()=>decide(item,'commented',input.value);
+    const send=element('button','Odoslať vyjadrenie','secondary');send.type='button';send.disabled=working;send.onclick=()=>decide(item,'commented',input.value);
     const box=element('div',undefined,'comment-box');box.append(label,input,send,element('small','Vyjadrenie odošle odpoveď zdroju. Neznamená schválenie akcie.'));card.append(box);
    }
    group.append(card);
@@ -176,17 +176,30 @@ function appendUnblock(card,row){
  if(!row.unblock)return;
  const task=row.unblock,box=element('details',undefined,'unblock-request');box.append(element('summary',task.route==='operator'?'Dotaz pre teba':'Požiadavka na odblokovanie · supervízor'),element('p',task.question));
  if(task.route==='operator'){
-  const button=element('button',task.status==='published'?'Odpovedať na dotaz':'Dotaz sa doručuje…','secondary');button.type='button';button.disabled=task.status!=='published';button.onclick=()=>{const item=items.find(i=>i.record.request.id===task.id);if(!item){message('Dotaz sa ešte načítava. Stlač synchronizáciu.');return}groupOpen.set(item.record.request.source,true);render();document.getElementById('operator-request-'+task.id)?.scrollIntoView?.({behavior:'smooth',block:'center'})};box.append(button);
+  const button=element('button',task.status==='published'?'Odpovedať na dotaz':'Dotaz sa doručuje…','secondary');button.type='button';button.disabled=working;button.onclick=()=>{const item=items.find(i=>i.record.request.id===task.id);if(!item){message('Dotaz sa ešte načítava. Stlač synchronizáciu.');return}groupOpen.set(item.record.request.source,true);render();document.getElementById('operator-request-'+task.id)?.scrollIntoView?.({behavior:'smooth',block:'center'})};box.append(button);
  }else box.append(element('small','Evidované pre supervízora. Technické overenie nevyžaduje tvoje schválenie.'));
  card.append(box);
 }
 async function applyOperatorInbox(p){
- if(p.operator_inbox===undefined)return;
- if(!Array.isArray(p.operator_inbox)||p.operator_inbox.length>100)throw Error('Neplatný snapshot dotazov.');
- const linked=new Map((p.awaiting_details||[]).filter(r=>r.unblock?.route==='operator').map(r=>[r.unblock.id,r.case_id]));const fresh=[];const seen=new Set();
- for(const item of p.operator_inbox){const id=item?.record?.request?.id;if(!UUID.test(id)||seen.has(id)||!linked.has(id)||(item.sha!==null&&!/^[a-f0-9]{40}$/.test(item.sha)))throw Error('Neplatný snapshot dotazu.');const record=await validate(item.record,id);if(record.request.context_ref!==linked.get(id))throw Error('Dotaz patrí inému prípadu.');seen.add(id);fresh.push({sha:item.sha,record,from_progress:true,open_url:record.request.chat_url||null})}
- const byId=new Map(items.filter(i=>!i.from_progress&&!(!i.record.decision&&['rafi','tinder'].includes(i.record.request.source)&&WAITING_CASE.test(i.record.request.context_ref))).map(i=>[i.record.request.id,i]));
- for(const item of fresh){const old=items.find(i=>i.record.request.id===item.record.request.id);byId.set(item.record.request.id,old?.record.decision?old:{...old,...item})}
+ if(p.operator_inbox===undefined&&p.operator_questions===undefined)return;
+ const scoped=p.operator_inbox??[],all=p.operator_questions??[],inactive=p.operator_inactive_ids??[];
+ if(!Array.isArray(scoped)||!Array.isArray(all)||scoped.length>100||all.length>100||!Array.isArray(inactive)||inactive.length>10000||inactive.some(id=>!UUID.test(id)))throw Error('Neplatný snapshot dotazov.');
+ const linked=new Map((p.awaiting_details||[]).filter(r=>r.unblock?.route==='operator').map(r=>[r.unblock.id,r.case_id])),fresh=new Map(),removed=new Set(inactive);
+ for(const [list,requireLink] of [[scoped,true],[all,false]])for(const item of list){
+  const id=item?.record?.request?.id;
+  if(!UUID.test(id)||(requireLink&&!linked.has(id))||(item.sha!==null&&!/^[a-f0-9]{40}$/.test(item.sha)))throw Error('Neplatný snapshot dotazu.');
+  const record=await validate(item.record,id);
+  if(requireLink&&record.request.context_ref!==linked.get(id))throw Error('Dotaz patrí inému prípadu.');
+  if(record.request.source==='instagram'&&record.request.kind!=='operator_question')continue;
+  const prior=fresh.get(id);if(prior&&prior.record.request_digest!==record.request_digest)throw Error('Konfliktný snapshot dotazu.');
+  fresh.set(id,{sha:item.sha??prior?.sha??null,record,from_progress:true,open_url:record.request.chat_url||null});
+ }
+ const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)&&!i.from_progress&&!(!i.record.decision&&['rafi','tinder'].includes(i.record.request.source)&&WAITING_CASE.test(i.record.request.context_ref))).map(i=>[i.record.request.id,i]));
+ for(const [id,item] of fresh){
+  if(removed.has(id))continue;
+  const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
+  byId.set(id,same&&old.record.decision?old:{...old,...item,sha:item.sha??(same?old.sha:null)??null});
+ }
  items=[...byId.values()];if(!editingPanel())render();
 }
 export function validateWaitingDetails(value){
@@ -632,7 +645,7 @@ async function refresh(){
  finally{clearTimeout(timer);if(refreshController===controller)refreshController=null}
 }
 async function refreshContents(){try{await loadProgress();const status=await requestStatus(),inactive=status.inactive;const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5),open_url=status.links.get(id),action=status.actions.get(id);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push({...previous,...(open_url?{open_url}:{open_url:null}),...(action?{draft:action.draft}:{draft:null})});continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);next.push({sha:file.sha,record,...(open_url&&['tinder','rafi','inactive'].includes(record.request.source)?{open_url,draft:action?.draft??null}:{})})}for(const item of items.filter(i=>i.from_progress))if(!next.some(n=>n.record.request.id===item.record.request.id))next.push(item);lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}catch(e){items=items.filter(i=>i.from_progress);render();message('Aktívne dotazy sa nepodarilo bezpečne overiť. Skús synchronizáciu znova.');throw e}finally{if(token&&!refreshController?.signal.aborted){await loadInactiveChats();await loadWhatsAppNames();await loadInstagramContacts();await loadConversationIndex();}}}
-async function decide(item,outcome,comment='',permission=null,confirmed=false){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirmed&&!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if(file.sha!==item.sha||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);saveRequestDrafts();render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
+async function decide(item,outcome,comment='',permission=null,confirmed=false){if(working||!token)return;comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){message('Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirmed&&!confirm(prompt))return;working=true;render();try{const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if((item.sha!==null&&file.sha!==item.sha)||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||item.sha;drafts.delete(id);saveRequestDrafts();render();message(outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){message(e.status===404?'Dotaz ešte nie je doručený do bridge. Tvoje vyjadrenie zostalo uložené; skús synchronizáciu.':e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){
  if(working||!token)return;
  if(!confirm(`Odvolať trvalé povolenie pre tento súbor?\n\n${item.record.request.file_change.path}\n${item.record.request.file_change.operation}\nBudúce zmeny budú opäť potrebovať schválenie.`))return;
