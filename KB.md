@@ -159,3 +159,20 @@ Ak bežný Git credential helper pri publikovaní vráti HTTP 403, nevypisuj ani
 ### Nekončiace Načítavam pri Tinder + Rafi (2026-10-24, 1.10.29)
 
 Stav automatizácie načítaj pred frontou požiadaviek. Sériové čítanie fronty nesmie odložiť prvý stav prepínača o desiatky sieťových volaní. Už pred párovaním explicitne inicializuj neznámy stav namiesto ponechania statického Načítavam. Celá obnova má spoločný 30-sekundový deadline vrátane čítania tiel a pomocných projekcií; pri pagehide sa preruší. Timeout musí uvoľniť pracovný stav a umožniť nový vedomý pokus, nesmie mazať párovanie, odosielať rozhodnutia ani automaticky opakovať zápis. GitHub cooldown rešpektuj, nemaž ho kvôli dostupnosti UI. Regresia: visiaca obnova skončí timeoutom, ďalší beh uspeje, stav sa číta pred frontou, po štarte nevisí Načítavam.
+## 2026-10-27 — Instagram operator cards hidden behind progress-only projection
+
+Release 1.10.71 accepted only Instagram requests carrying
+`kind=operator_question` in the fast aggregate inbox. Two already-published,
+immutable requests used the older validated contract where the narrow
+`instagram-operator-*` context reference identifies an operator question.
+They therefore remained visible as non-interactive chat progress but were
+discarded before the standard request renderer could provide Approve, Reject,
+comment and Send controls.
+
+Release 1.10.72 reads the dedicated `instagram_operator_questions` projection,
+keeps it in the authoritative inbox snapshot, and accepts only the narrow
+legacy `source=instagram` plus `context_ref=instagram-operator-*` shape in
+addition to new `kind=operator_question` records. Ordinary Instagram contact
+registrations remain excluded. All accepted records still pass the existing
+UUID, digest, expiry, source, fresh GET and single-CAS decision checks; the fix
+does not approve or send any social message.

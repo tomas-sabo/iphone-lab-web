@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
+assert(source.includes('p.instagram_operator_questions===undefined'),'Instagram inbox is an explicit input');
+assert(source.includes('operatorIndexSnapshot=[...all,...instagram]'),'authoritative snapshot preserves both inboxes');
+assert(source.includes('instagram_operator_questions:data.instagram_operator_questions'),'request-status forwards Instagram questions');
+const helper=source.match(/export function isInstagramOperatorQuestion\(.*\n/)[0];
+const context={};vm.createContext(context);vm.runInContext(helper.replace('export function','function'),context);
+assert(context.isInstagramOperatorQuestion({source:'instagram',kind:'operator_question',context_ref:'anything'}));
+assert(context.isInstagramOperatorQuestion({source:'instagram',context_ref:'instagram-operator-legacy'}));
+assert(!context.isInstagramOperatorQuestion({source:'instagram',context_ref:'instagram-contact-registration'}));
+assert(context.isInstagramOperatorQuestion({source:'tinder',context_ref:'case-a'}));
+console.log('Instagram operator questions retain standard decision cards.');

@@ -242,17 +242,19 @@ function appendUnblock(card,row){
  }else box.append(element('small','Evidované pre supervízora. Technické overenie nevyžaduje tvoje schválenie.'));
  card.append(box);
 }
+export function isInstagramOperatorQuestion(request){return request.source!=='instagram'||request.kind==='operator_question'||request.context_ref.startsWith('instagram-operator-')}
 async function applyOperatorInbox(p,authoritative=false){
- if(p.operator_inbox===undefined&&p.operator_questions===undefined)return;
- const scoped=p.operator_inbox??[],all=p.operator_questions??[],inactive=p.operator_inactive_ids??[];
- if(!Array.isArray(scoped)||!Array.isArray(all)||scoped.length>100||all.length>100||!Array.isArray(inactive)||inactive.length>10000||inactive.some(id=>!UUID.test(id)))throw Error('Neplatný snapshot dotazov.');
+ if(p.operator_inbox===undefined&&p.operator_questions===undefined&&p.instagram_operator_questions===undefined)return;
+ const scoped=p.operator_inbox??[],all=p.operator_questions??[],instagram=p.instagram_operator_questions??[],inactive=p.operator_inactive_ids??[];
+ if(!Array.isArray(scoped)||!Array.isArray(all)||!Array.isArray(instagram)||scoped.length>100||all.length+instagram.length>100||!Array.isArray(inactive)||inactive.length>10000||inactive.some(id=>!UUID.test(id)))throw Error('Neplatný snapshot dotazov.');
  const linked=new Map((p.awaiting_details||[]).filter(r=>r.unblock?.route==='operator').map(r=>[r.unblock.id,r.case_id])),fresh=new Map(),removed=new Set([...inactive,...inactiveRequestIds]);
- for(const [list,requireLink] of [[scoped,true],[all,false]])for(const item of list){
+ for(const [list,requireLink,instagramOnly] of [[scoped,true,false],[all,false,false],[instagram,false,true]])for(const item of list){
   const id=item?.record?.request?.id;
   if(!UUID.test(id)||(requireLink&&!linked.has(id))||(item.sha!==null&&!/^[a-f0-9]{40}$/.test(item.sha)))throw Error('Neplatný snapshot dotazu.');
   const record=await validate(item.record,id);
   if(requireLink&&record.request.context_ref!==linked.get(id))throw Error('Dotaz patrí inému prípadu.');
-  if(record.request.source==='instagram'&&record.request.kind!=='operator_question')continue;
+  if(instagramOnly&&record.request.source!=='instagram')throw Error('Neplatný Instagram snapshot dotazu.');
+  if(!isInstagramOperatorQuestion(record.request))continue;
   const prior=fresh.get(id);if(prior&&prior.record.request_digest!==record.request_digest)throw Error('Konfliktný snapshot dotazu.');
   fresh.set(id,{sha:item.sha??prior?.sha??null,record,from_progress:true,open_url:record.request.chat_url||null});
  }
@@ -263,7 +265,7 @@ async function applyOperatorInbox(p,authoritative=false){
   const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
   byId.set(id,same&&old.record.decision?old:{...old,...item,sha:item.sha??(same?old.sha:null)??null});
  }
- items=[...byId.values()];if(authoritative)operatorIndexSnapshot=all;if(!editingPanel())render();
+ items=[...byId.values()];if(authoritative)operatorIndexSnapshot=[...all,...instagram];if(!editingPanel())render();
 }
 export function validateWaitingDetails(value){
  if(value===undefined)return null;
@@ -713,7 +715,7 @@ async function readProgress(){
  }catch{showAutomation(null);preserveProgressOnFailure();$('tinder-overall-count').textContent='Aktuálny počet nie je overený.';$('tinder-count').textContent='Aktuálny stav nie je overený.';$('tinder-overall-meter').value=0;$('tinder-meter').value=0;renderChannelTotals(null,'Aktuálny počet nie je overený.');$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Posledné overené chaty zostávajú zobrazené.';$('tinder-eta').textContent='Skontroluj pripojenie MacBooku a zopakuj synchronizáciu.'}
 }
 export function validateRequestStatus(data){const chat_links=data?.chat_links===undefined?{}:data.chat_links,chat_actions=data?.chat_actions===undefined?{}:data.chat_actions;if(data?.schema_version!==1||!Array.isArray(data.inactive_ids)||data.inactive_ids.length>10000||!data.inactive_ids.every(id=>UUID.test(id))||!chat_links||typeof chat_links!=='object'||Array.isArray(chat_links)||Object.keys(chat_links).length>100||!chat_actions||typeof chat_actions!=='object'||Array.isArray(chat_actions)||Object.keys(chat_actions).length>100)throw Error('Stav aktívnych dotazov má neplatný formát.');const links=new Map(),actions=new Map();for(const [id,url] of Object.entries(chat_links)){if(!UUID.test(id))throw Error('Stav aktívnych dotazov má neplatný formát.');links.set(id,validateTinderChatUrl(url))}for(const [id,action] of Object.entries(chat_actions)){if(!UUID.test(id)||!action||typeof action!=='object'||Object.keys(action).some(k=>!['open_url','draft'].includes(k))||typeof action.draft!=='string'||!action.draft.trim()||action.draft.length>1500)throw Error('Stav aktívnych dotazov má neplatný formát.');const open_url=validateTinderChatUrl(action.open_url);if(links.get(id)!==open_url)throw Error('Stav aktívnych dotazov má neplatný formát.');actions.set(id,{open_url,draft:action.draft})}return {inactive:new Set(data.inactive_ids),links,actions}}
-async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined){inactiveRequestIds=new Set([...inactiveRequestIds,...status.inactive]);await applyOperatorInbox({operator_questions:data.operator_questions,operator_inactive_ids:[...inactiveRequestIds]},true)}return status}
+async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined||data.instagram_operator_questions!==undefined){inactiveRequestIds=new Set([...inactiveRequestIds,...status.inactive]);await applyOperatorInbox({operator_questions:data.operator_questions,instagram_operator_questions:data.instagram_operator_questions,operator_inactive_ids:[...inactiveRequestIds]},true)}return status}
 async function refresh(){
  const controller=new AbortController();refreshController=controller;
  const timer=setTimeout(()=>controller.abort(),REFRESH_TIMEOUT_MS);
