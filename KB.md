@@ -180,3 +180,7 @@ does not approve or send any social message.
 Release 1.10.73 applies the same Instagram compatibility predicate while
 grouping request cards. This keeps the global pending count and per-source
 section counts consistent for legacy immutable Instagram operator questions.
+
+Release 1.10.74 preserves the document scroll position synchronously and again
+after the next layout frame whenever the request sections are re-rendered. This
+prevents background refreshes from moving the operator to a section heading.

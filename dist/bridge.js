@@ -136,6 +136,7 @@ function renderNoAction(){
  if(noActionChats.length>noActionVisible){const more=element('button','Zobraziť ďalších 100','secondary');more.type='button';more.onclick=()=>{noActionVisible+=100;render()};list.append(more)}
 }
 function render(){
+ const scrollTop=window.scrollY;
  if(instagramPending&&instagramPendingUntil&&instagramPendingUntil<=Date.now()){instagramPending=false;instagramDesired=null;instagramPendingUntil=0;}instagramTimeElements=[];
  if(editingPanel()){renderDeferred=true;return}renderDeferred=false;
  syncBadge();renderNoAction();$('requests').replaceChildren();
@@ -216,6 +217,8 @@ function render(){
  for(const chat of [...inactiveChats].sort((a,b)=>Number(b.state==='reactivation_pending')-Number(a.state==='reactivation_pending')||a.name.localeCompare(b.name))){const row=element('li'),link=element('a',chat.name,'contact-name');link.href=chat.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link,element('p',chat.state==='reactivation_pending'?'Nová správa · čaká na tvoje potvrdenie reaktivácie.':'Neaktívny · automatické spracovanie je vypnuté.','hint'));inactiveList.append(row)}
  inactive.append(inactiveList,element('p',inactiveStatus,'group-empty'));
  $('requests').append(inactive);
+ if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop);
+ requestAnimationFrame(()=>{if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop)});
 }
 let progressLoading=null;
 let statisticsManifest=null,statisticsData=null,statisticsLoading=false,statisticsMonth='',statisticsMetric='totalMD';
