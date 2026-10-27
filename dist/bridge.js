@@ -86,7 +86,8 @@ function inactiveRequestChatLink(item){
 }
 function appendTinderActions(parent,url,draft=null){url=validateTinderChatUrl(url);const link=element('a','Otvoriť chat v Tinderi','tinder-chat-open');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);if(draft){const copy=element('button','Skopírovať návrh','secondary tinder-draft-copy');copy.type='button';copy.onclick=()=>copyDraft(draft);parent.append(copy)}}
 export function manualContactNames(manual,index){return [...new Set([...manual,...index.map(c=>c.name)])]}
-function syncBadge(){const count=[...drafts.values()].filter(v=>v.trim()).length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
+function pendingDraftItems(){const now=Date.now();return items.filter(item=>{const r=item.record.request;return !inactiveRequestIds.has(r.id)&&item.record.decision===null&&now>=Date.parse(r.created_at)&&now<Date.parse(r.expires_at)&&(drafts.get(r.id)||'').trim()})}
+function syncBadge(){const count=pendingDraftItems().length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
 function rememberNoActionRefresh(command){noActionRefreshPending=command;try{if(command)localStorage.setItem(NO_ACTION_PENDING_KEY,JSON.stringify(command));else localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{}}
 function validateNoActionRefreshDocument(data){
  if(!data||data.schema_version!==1)throw Error('Neplatný stav obnovenia chatov.');
@@ -325,7 +326,7 @@ export function waitingDuration(value,now=Date.now()){
 }
 let waitingTimeElements=[],waitingVisible=100,waitingSignature='',waitingRows=null;
 function expirePipelineRows(){if(waitingRows?.some(row=>displayExpiry(row)&&Date.parse(displayExpiry(row))<=Date.now()))renderWaiting(visiblePipelineRows(waitingRows),0)}
-function refreshWaitingDurations(){for(const [node,latest] of instagramTimeElements)node.textContent=instagramActivityText(latest);for(const [node,since,row] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=row?pipelineDuration(row):waitingDuration(since)}
+function refreshWaitingDurations(){syncBadge();for(const [node,latest] of instagramTimeElements)node.textContent=instagramActivityText(latest);for(const [node,since,row] of [...waitingTimeElements,...activeTimeElements,...noActionTimeElements])node.textContent=row?pipelineDuration(row):waitingDuration(since)}
 function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich chatov.'){
  waitingRows=null;waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
@@ -757,7 +758,7 @@ $('refresh').onclick=async()=>{
  const button=$('refresh');button.disabled=true;let submitted=false;
  try{
   // Only explicit synchronization sends unsent text, using the same per-request confirmation and SHA validation.
-  const pendingDrafts=[...items].filter(item=>(drafts.get(item.record.request.id)||'').trim()&&item.record.decision===null);
+  const pendingDrafts=pendingDraftItems();
   if(pendingDrafts.length&&!confirm(`Odoslať všetky vyplnené vyjadrenia (${pendingDrafts.length}) a potom načítať nový stav?`))return;
   if(pendingDrafts.length)message(`Odosielam vyjadrenia: 0 / ${pendingDrafts.length}…`);
   let sentDrafts=0;
