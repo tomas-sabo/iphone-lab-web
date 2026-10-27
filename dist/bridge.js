@@ -145,16 +145,19 @@ function render(){
   const group=element('details',undefined,'request-group');
   const matches=items.filter(item=>item.record.request.source===source&&isInstagramOperatorQuestion(item.record.request));
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
+  const afterQuestions=[];
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
   heading.onclick=()=>groupOpen.set(source,!group.open);
-  heading.append(element('span',`${pending}/${source==='instagram'?instagramContacts.length:source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
+  heading.append(element('span',`${pending}/${source==='whatsapp'?whatsappNames.filter(name=>!whatsappManual.includes(name)).length:matches.length}`,'group-count'));
 
   group.append(heading);
   if(source==='instagram'){
    const list=element('ul',undefined,'contact-list');
    for(const contact of instagramContacts){const row=element('li');const head=element('div',undefined,'instagram-chat-heading');head.append(element('strong',contact.name));if(contact.state==='paired'){const state=instagramControl?.contacts?.[contact.username],pending=instagramPending===contact.username,checked=state?.enabled===true;const toggle=element('button',checked?'ON':'OFF','instagram-toggle');toggle.type='button';toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede pre '+contact.name);toggle.setAttribute?.('aria-checked',String(checked));toggle.setAttribute?.('aria-busy',String(pending));toggle.disabled=!token||instagramSaving||Boolean(instagramPending);toggle.title=instagramPending===contact.username?'Čaká na potvrdenie z MacBooku':state?'Automatické odpovede':'Overiť dostupnosť automatických odpovedí';toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeInstagramAutomation(contact.username)};head.append(toggle)}row.append(head);if(contact.state==='paired'){appendInstagramActivity(row,contact);row.append(element('p','@'+contact.username+' · Spárované','hint'));const link=element('a','Otvoriť chat v Instagrame','tinder-chat-open');link.href=instagramChatLink(contact);link.target='_blank';link.rel='noopener noreferrer';row.append(link);const profile=element('a','Otvoriť profil','secondary');profile.href='https://www.instagram.com/'+contact.username+'/';profile.target='_blank';profile.rel='noopener noreferrer';row.append(profile)}else row.append(element('p','Čaká na spárovanie','hint'));list.append(row)}
-   group.append(list,element('p',instagramControlError?instagramControlError:instagramPending?'Oranžový prepínač čaká na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
+   const contacts=element('details',undefined,'unassigned-contacts');
+   contacts.append(element('summary',`Instagram kontakty (${instagramContacts.length})`),list,element('p',instagramControlError?instagramControlError:instagramPending?'Oranžový prepínač čaká na potvrdenie z MacBooku…':!instagramControl?.contacts?'Stavy automatických odpovedí sa načítavajú.':'Automatické odpovede zapni alebo vypni pri jednotlivých chatoch.','hint'));
+   afterQuestions.push(contacts);
   }
   if(source==='tinder')group.append(element('p',bridgeHealthText,'hint'),element('p',incomingScannedAt?'Snímka kontroly správ z: '+new Date(incomingScannedAt).toLocaleString('sk-SK'):'Čas poslednej kontroly nových správ zatiaľ nie je dostupný.','hint'));
   if(source==='whatsapp'){
@@ -200,6 +203,7 @@ function render(){
    }
    group.append(card);
   }
+  group.append(...afterQuestions);
  }
 
  const manualNames=manualContactNames(whatsappManual,conversationIndex);
