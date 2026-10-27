@@ -52,3 +52,5 @@ assert.equal(ctx.preloadWaitText(ig),'—');
 assert.throws(()=>ctx.validatePipelineDetails([{...sent,incoming_received_at:new Date(now).toISOString()}]));
 ctx.renderWaiting([delayedChecked],1);const times=$('tinder-waiting-list').children[0].children[0].children[1];
 assert.equal(times.children[1].textContent,'1 min 5 s');
+assert.equal(ctx.validatePipelineDetails([{...ig,open_url:'https://ig.me/m/fixture'}])[0].open_url,'https://ig.me/m/fixture');
+assert.throws(()=>ctx.validatePipelineDetails([{...ig,open_url:'https://ig.me/m/fixture?redirect=evil'}]));
