@@ -188,3 +188,18 @@ prevents background refreshes from moving the operator to a section heading.
 Release 1.10.75 removes rows carrying an operator question from the unified
 `Priebeh chatov` projection. The immutable question remains available only in
 its source section under `Pre Tomyho`, where the decision controls live.
+
+### Overenie nezobrazenej aktualizácie Dashboardu
+
+Ak Dashboard po publikovaní stále hlási predchádzajúcu verziu, najprv porovnaj
+lokálny `release.json` so vzdialenou vetvou pomocou `git ls-remote`. Potom načítaj
+`release.json` cez GitHub Contents API s `Accept: application/vnd.github.raw+json`.
+Tým sa overí obsah vetvy nezávisle od Raw CDN. Nakoniec over rovnaký súbor cez
+`raw.githubusercontent.com` s jedinečným query parametrom a `Cache-Control:
+no-cache`. Updater už používa `cache: no-store` a časový parameter; kým Raw
+endpoint vracia starý pointer, nevydávaj ďalší release ani nemeň bundle.
+
+Keď Contents API aj Raw endpoint vrátia rovnakú novú verziu a SHA-256, používateľ
+môže znova stlačiť `Aktualizovať`. Ak sa verzia stále nezmení, úplne zavrie a
+znovu otvorí PWA. Tento postup nemení bridge token, lokálne párovanie ani
+rozhodnutia operátora.
