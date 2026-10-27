@@ -142,7 +142,7 @@ function render(){
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
-  const matches=items.filter(item=>item.record.request.source===source&&(source!=='instagram'||item.record.request.kind==='operator_question'));
+  const matches=items.filter(item=>item.record.request.source===source&&isInstagramOperatorQuestion(item.record.request));
   const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');

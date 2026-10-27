@@ -176,3 +176,7 @@ addition to new `kind=operator_question` records. Ordinary Instagram contact
 registrations remain excluded. All accepted records still pass the existing
 UUID, digest, expiry, source, fresh GET and single-CAS decision checks; the fix
 does not approve or send any social message.
+
+Release 1.10.73 applies the same Instagram compatibility predicate while
+grouping request cards. This keeps the global pending count and per-source
+section counts consistent for legacy immutable Instagram operator questions.

@@ -3,6 +3,7 @@ const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 assert(source.includes('p.instagram_operator_questions===undefined'),'Instagram inbox is an explicit input');
 assert(source.includes('operatorIndexSnapshot=[...all,...instagram]'),'authoritative snapshot preserves both inboxes');
 assert(source.includes('instagram_operator_questions:data.instagram_operator_questions'),'request-status forwards Instagram questions');
+assert(source.includes('item.record.request.source===source&&isInstagramOperatorQuestion(item.record.request)'),'section renderer uses the same compatibility rule as the inbox');
 const helper=source.match(/export function isInstagramOperatorQuestion\(.*\n/)[0];
 const context={};vm.createContext(context);vm.runInContext(helper.replace('export function','function'),context);
 assert(context.isInstagramOperatorQuestion({source:'instagram',kind:'operator_question',context_ref:'anything'}));
