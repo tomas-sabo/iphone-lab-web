@@ -214,3 +214,11 @@ The transport directory is not a list of human decisions: it also contains histo
 - Validate the complete inbox before committing its tombstones. Preserve confirmed decisions against delayed pending snapshots with the same request digest. Sending still requires a fresh canonical GET and scoped CAS; retaining a card is never permission to execute its action.
 - Run `tests/test-operator-projection.cjs`: it exercises actual rendered cards and handlers for one Rafi question plus two Instagram questions, a fresh PWA realm, registration-only phantom counts, empty/in-flight/failed refresh, atomic invalid-snapshot rejection, sticky decisions and retirement. Use synthetic records only. Also run updater, pairing, refresh deadline, editing and active-chat tests before release.
 - Existing `test-waiting-details.cjs` has an unrelated legacy expectation that is also failing on the 1.10.76 baseline; this release does not change waiting-detail validation.
+
+## Čerstvosť Dashboardu a neaktívne chaty — 2026-10-27
+
+- `Priebeh chatov`, `Aktívne chaty` a `Neaktívni` sú odvodené projekcie. Každá musí niesť UTC `updated_at` a klient ju smie zobraziť ako aktuálnu najviac päť minút. Staršia, budúca alebo chýbajúca časová pečiatka je neplatná.
+- Pri výpadku sa môže ponechať iba posledná projekcia, ktorá je stále v päťminútovom okne. Po jeho uplynutí sa karty a počty vyčistia a Dashboard výslovne oznámi, že zastarané údaje skryl. Starý zoznam sa nikdy nesmie tváriť ako živý stav.
+- Kontakty sa spájajú výhradne presným stabilným `match_id`. Meno ako Simonka alebo Veronika nie je identita a nesmie rozhodovať o stave, vlastníctve, vylúčení ani párovaní.
+- Publikácia neaktívnych chatov odvodzuje `updated_at` z času autoritatívneho `state.json`. Ak sa zdroj neobnovuje, Dashboard to po piatich minútach ukáže ako problém synchronizácie namiesto zobrazenia starých stavov.
+- Regresné testy musia pokryť čerstvý, starší a budúci čas, skrytie starého priebehu po chybe a odmietnutie duplicitného `match_id` aj pri rovnakom zobrazovanom mene.

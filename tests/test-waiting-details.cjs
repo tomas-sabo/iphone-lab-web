@@ -19,18 +19,21 @@ const awaiting=context.validateWaitingDetails([{...valid[0],state:'awaiting_repl
 assert.equal(awaiting[0].state,'awaiting_reply');
 for(const state of ['rejected','transport_blocked','open_pending']){
  const blocked=context.validateWaitingDetails([{...valid[0],state,reason:'Bezpečnostne zastavené pred odoslaním.'}]);
- assert.equal(blocked[0].state,state);
+ assert.equal(blocked[0].state,state);assert.equal(blocked[0].stalled,false);assert.equal(blocked[0].automatic_resolution,true);
 }
+assert.throws(()=>context.validateWaitingDetails([{...valid[0],stalled:true,automatic_resolution:true}]));
 assert.equal(context.waitingDuration('2026-10-23T14:29:50Z',now),'práve teraz');
 assert.equal(context.waitingDuration('2026-10-23T13:25:00Z',now),'1 h 5 min');
 assert.equal(context.waitingDuration('2026-10-21T11:30:00Z',now),'2 d 3 h');
-for(const invalid of [null,{},new Array(101).fill(valid[0]),[{...valid[0],case_id:'../../secret'}],[{...valid[0],name:''}],[{...valid[0],reason:''}],[{...valid[0],state:'sent'}],[{...valid[0],waiting_since:'not-a-date'}]])assert.throws(()=>context.validateWaitingDetails(invalid));
+for(const invalid of [null,{},new Array(10001).fill(valid[0]),[{...valid[0],case_id:'../../secret'}],[{...valid[0],name:''}],[{...valid[0],reason:''}],[{...valid[0],state:'sent'}],[{...valid[0],waiting_since:'not-a-date'}]])assert.throws(()=>context.validateWaitingDetails(invalid));
 const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 assert(html.indexOf('id="tinder-waiting"')>html.indexOf('id="statistics-panel"'),'waiting section follows statistics');
 assert(source.includes('validateWaitingDetails(p.awaiting_details)'),'client consumes the backend waiting-detail contract');
 assert(source.includes('p.waiting_count'),'client validates the full stalled-chat count rather than only operator questions');
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
-assert(source.includes('setInterval(refreshWaitingDurations,30000)'),'elapsed times refresh without waiting for the network');
+assert(source.includes('setInterval(refreshWaitingDurations,1000)'),'elapsed times refresh without waiting for the network');
+assert(source.includes("row.automatic_resolution?' is-resolving':''"),'automatically resolvable transport problems render separately');
+assert(source.includes('Automaticky sa rieši'),'automatic resolution is explicit to the operator');
 assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
 assert(source.includes('setInterval(pollBridge,60000)'),'automatic full bridge polling is limited to once per minute');
 assert(!source.includes('setInterval(pollBridge,15000)'),'legacy high-frequency polling is removed');

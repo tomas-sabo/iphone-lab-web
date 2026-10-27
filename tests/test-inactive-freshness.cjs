@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
+const ctx={Date,Error,Number,Array,String,Math,URL,Set,JSON};vm.createContext(ctx);
+const tinderUrl=source.match(/export function validateTinderChatUrl\(.*\n/)[0];
+const fresh=source.match(/export function projectionFresh\(.*\n/)[0];
+const start=source.indexOf('export function validateInactiveChats'),end=source.indexOf('async function loadInactiveChats');
+vm.runInContext((tinderUrl+fresh+source.slice(start,end)).replaceAll('export function','function'),ctx);
+const chat={match_id:'match_123',name:'Simonka',open_url:'https://tinder.com/app/messages/match_123',state:'inactive',inactive_since:Date.now()/1000};
+const document={schema_version:1,updated_at:new Date().toISOString(),pending:0,total:1,chats:[chat]};
+const checked=ctx.validateInactiveChats(document);assert.equal(checked.rows.length,1);assert.equal(checked.rows[0].match_id,'match_123');
+assert.throws(()=>ctx.validateInactiveChats({...document,updated_at:new Date(Date.now()-300001).toISOString()}),/zastaraný/);
+assert.throws(()=>ctx.validateInactiveChats({...document,updated_at:undefined}),/zastaraný/);
+assert.throws(()=>ctx.validateInactiveChats({...document,chats:[chat,{...chat,name:'Iná Simonka'}],total:2}),/Neplatný/);
+console.log('Inactive projection requires a fresh timestamp and exact unique match IDs.');

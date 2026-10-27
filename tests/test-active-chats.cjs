@@ -1,12 +1,13 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8'),nodes={};
-const node=(tag,text)=>({tag,textContent:text,children:[],append(...v){this.children.push(...v)},replaceChildren(...v){this.children=v}}),$=id=>nodes[id]??(nodes[id]=node());
+const node=(tag,text,className='')=>({tag,textContent:text,className,children:[],append(...v){this.children.push(...v)},replaceChildren(...v){this.children=v}}),$=id=>nodes[id]??(nodes[id]=node());
 const ctx={Date,Error,Number,Array,String,Math,URL,Set,JSON,$,element:node,appendTinderActions:(target,url)=>target.append(node('a',url))};vm.createContext(ctx);
 const helper=source.match(/export function validateTinderChatUrl\(.*\n/)[0];vm.runInContext((helper+source.slice(source.indexOf('const WAITING_CASE='),source.indexOf('function statisticsPointer'))).replaceAll('export function','function'),ctx);
 const row=(i,state='awaiting_reply')=>({case_id:'case-'+i.toString(16).padStart(24,'0'),name:'Fixture '+i,reason:'Čakáme na odpoveď',state,waiting_since:new Date(Date.now()-60000).toISOString(),open_url:'https://tinder.com/app/messages/match_'+i});
 const active=Array.from({length:250},(_,i)=>row(i+1));assert.equal(ctx.validateActiveDetails(active).length,250);
 assert.throws(()=>ctx.validateActiveDetails(Array.from({length:10001},(_,i)=>row(i))));assert.throws(()=>ctx.validateActiveDetails([row(1,'inactive')]));assert.throws(()=>ctx.validateActiveDetails([row(1),row(1)]));assert.throws(()=>ctx.validateActiveDetails([{...row(1),open_url:'https://evil.test/chat'}]));
 const p={awaiting_details:[row(500,'prepared')],waiting_count:1,active_details:active,active_count:250};const result=ctx.chatProjections(p);assert.equal(result.waiting.length,1);assert.equal(result.active.length,250);
+assert.equal(ctx.projectionFresh(new Date().toISOString()),true);assert.equal(ctx.projectionFresh(new Date(Date.now()-300001).toISOString()),false);assert.equal(ctx.projectionFresh(new Date(Date.now()+30001).toISOString()),false);
 assert.throws(()=>ctx.chatProjections({...p,active_count:249}));assert.throws(()=>ctx.chatProjections({...p,awaiting_details:[row(1,'stale')]}));
 const legacy=ctx.chatProjections({awaiting_details:[row(1),row(2,'needs_user')],waiting_count:2});assert.equal(legacy.waiting.length,1);assert.equal(legacy.active,null);
 ctx.renderActive(active);assert.equal($('tinder-active-count').textContent,'250');assert.equal($('tinder-active-list').children.length,101);$('tinder-active-list').children.at(-1).onclick();assert.equal($('tinder-active-list').children.length,201);$('tinder-active-list').children.at(-1).onclick();assert.equal($('tinder-active-list').children.length,250);assert.equal($('tinder-active-list').children[0].children[2].textContent,active[0].open_url);
@@ -14,8 +15,8 @@ const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');assert(html.i
 const waiting=Array.from({length:250},(_,i)=>({...row(i+1000,'dispatched'),stalled:i===0}));
 assert.equal(ctx.validateWaitingDetails(waiting).length,250);ctx.renderWaiting(waiting,250);
 assert.equal($('tinder-waiting-count').textContent,'250');assert.equal($('tinder-waiting-list').children.length,101);
-assert($('tinder-waiting-list').children[0].children.some(x=>x.textContent==='Zaseknuté'));
-assert(!$('tinder-waiting-list').children[1].children.some(x=>x.textContent==='Zaseknuté'));
+assert($('tinder-waiting-list').children[0].className.includes('is-stalled'));
+assert(!$('tinder-waiting-list').children[1].className.includes('is-stalled'));
 $('tinder-waiting-list').children.at(-1).onclick();assert.equal($('tinder-waiting-list').children.length,201);
 assert.equal(ctx.validateWaitingDetails([row(9000,'queued')])[0].stalled,false);
 assert.throws(()=>ctx.validateWaitingDetails([{...row(9001,'prepared'),stalled:'yes'}]));
@@ -39,7 +40,8 @@ console.log('Unified T/I stages, frozen confirmed timer, exact120s expiry, chann
 // Expiry is absolute from confirmed send; refresh never adds phone time.
 const late={...sent,case_id:'case-'+'e'.repeat(24),waiting_since:new Date(now-700000).toISOString(),completed_at:new Date(now-600000).toISOString(),expires_at:new Date(now-480000).toISOString()};
 assert.equal(ctx.visiblePipelineRows(ctx.validatePipelineDetails([late]),now).length,0);
-ctx.renderWaiting([sent],1);assert.equal(ctx.preserveProgressOnFailure(),true);assert.equal($('tinder-waiting-list').children.length,1);
+ctx.progressUpdatedAt=new Date().toISOString();ctx.renderWaiting([sent],1);assert.equal(ctx.preserveProgressOnFailure(),true);assert.equal($('tinder-waiting-list').children.length,1);
+ctx.progressUpdatedAt=new Date(Date.now()-300001).toISOString();assert.equal(ctx.preserveProgressOnFailure(),false);assert.equal($('tinder-waiting-list').children.length,0);assert.equal($('tinder-active-list').children.length,0);
 ctx.renderWaiting([late],1);assert(!$('tinder-waiting-list').children.some(n=>n.children?.some(c=>c.textContent===late.name)));
 assert.equal(source.includes('sent-first-visible'),false);assert.equal(source.includes('setInterval(pollProgress,15000)'),true);
 console.log('Confirmed-send absolute expiry and no first-view reset; prior verified view retained on failure.');
