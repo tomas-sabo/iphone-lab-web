@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
+const start=source.indexOf('export function validateInstagramContacts('),end=source.indexOf('\nasync function loadInstagramContacts(',start);
+const ctx={};vm.createContext(ctx);vm.runInContext(source.slice(start,end).replace('export function','function'),ctx);
+const valid={name:'Example',state:'unpaired',api_verified:true,username:'example_test',open_url:'https://ig.me/m/example_test'};
+let result=ctx.validateInstagramContacts({schema_version:1,contacts:[valid]});assert.equal(result[0].state,'paired');assert.equal(result[0].api_verified,true);assert.equal(result[0].thread_id,undefined);
+for(const bad of [{...valid,open_url:'https://evil.example/'},{...valid,username:'../bad'}])assert.throws(()=>ctx.validateInstagramContacts({schema_version:1,contacts:[bad]}));
+assert.throws(()=>ctx.validateInstagramContacts({schema_version:1,contacts:[valid,valid]}));
+assert.equal(ctx.validateInstagramContacts({schema_version:1,contacts:[{name:'Pending',state:'unpaired'}]})[0].state,'unpaired');
+assert.equal(ctx.validateInstagramContacts({schema_version:1,contacts:[{name:'Browser',state:'paired',username:'example_test',thread_id:'123456',open_url:'https://www.instagram.com/direct/t/123456/'}]})[0].thread_id,'123456');
+console.log('API pairing validates safe links, preserves browser pairing and rejects malformed or duplicate contacts.');
