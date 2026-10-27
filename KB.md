@@ -184,3 +184,7 @@ section counts consistent for legacy immutable Instagram operator questions.
 Release 1.10.74 preserves the document scroll position synchronously and again
 after the next layout frame whenever the request sections are re-rendered. This
 prevents background refreshes from moving the operator to a section heading.
+
+Release 1.10.75 removes rows carrying an operator question from the unified
+`Priebeh chatov` projection. The immutable question remains available only in
+its source section under `Pre Tomyho`, where the decision controls live.

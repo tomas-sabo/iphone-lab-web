@@ -30,6 +30,8 @@ const checked=ctx.validatePipelineDetails([sent])[0];assert.equal(ctx.waitingSta
 assert.throws(()=>ctx.validatePipelineDetails([{...sent,expires_at:new Date(now+100001).toISOString()}]));assert.throws(()=>ctx.validatePipelineDetails([{...sent,state:'prepared'}]));
 const ig={...row(9501,'dispatched'),channel:'instagram',case_id:'ig-'+'f'.repeat(24),pipeline_stage:'waiting_rafi',stalled:false,open_url:'https://www.instagram.com/direct/t/123456789/'};assert.equal(ctx.waitingStageLabel(ctx.validatePipelineDetails([ig])[0]),'Rafi I');assert.throws(()=>ctx.validatePipelineDetails([{...ig,open_url:'https://evil.example/direct/t/123456789/'}]));assert.throws(()=>ctx.validatePipelineDetails([{...ig,case_id:'case-'+'f'.repeat(24)}]));
 const pipeline=ctx.chatProjections({...p,pipeline_details:[ig,sent]});assert.equal(pipeline.waitingCount,2);assert.equal(pipeline.active.length,250);
+const igQuestion={...ig,case_id:'ig-'+'a'.repeat(24),pipeline_stage:'held',stalled:true,unblock:{id:'11111111-1111-4111-8111-111111111111',owner:'Instagram',route:'operator',status:'published',question:'One exact question?'}};
+const withoutQuestions=ctx.chatProjections({...p,pipeline_details:[ig,igQuestion,sent]});assert.equal(withoutQuestions.waitingCount,2);assert(!withoutQuestions.waiting.some(item=>item.unblock?.route==='operator'));
 ctx.renderWaiting([sent],1);assert.equal($('tinder-waiting-list').children.length,1);ctx.renderWaiting([{...sent,expires_at:new Date(now-1).toISOString()}],1);assert.equal($('tinder-waiting-list').children.length,0);
 console.log('Unified T/I stages, frozen confirmed timer, exact120s expiry, channel identity/URL rejection passed.');
 

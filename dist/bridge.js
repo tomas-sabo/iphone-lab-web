@@ -317,10 +317,10 @@ export function chatProjections(p){
  if(waiting&&Number.isSafeInteger(count)&&waiting.length!==count)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');
  const active=validateActiveDetails(p.active_details);
  if(active&&(!Number.isSafeInteger(p.active_count)||p.active_count!==active.length))throw Error('Počet aktívnych chatov nesúhlasí so súhrnom.');
- const ours=waiting?.filter(row=>row.state!=='awaiting_reply')??null;
+ const ours=waiting?.filter(row=>row.state!=='awaiting_reply'&&row.unblock?.route!=='operator')??null;
  const ids=new Set(ours?.map(row=>row.case_id)||[]);
  if(active?.some(row=>ids.has(row.case_id)))throw Error('Chat nemôže byť v oboch zoznamoch.');
- const pipeline=p.pipeline_details===undefined?null:validatePipelineDetails(p.pipeline_details);
+ const pipeline=p.pipeline_details===undefined?null:validatePipelineDetails(p.pipeline_details).filter(row=>row.unblock?.route!=='operator');
  return {waiting:pipeline||ours,waitingCount:pipeline?pipeline.length:ours?ours.length:Number.isSafeInteger(count)?count:0,active};
 }
 export function waitingDuration(value,now=Date.now()){
