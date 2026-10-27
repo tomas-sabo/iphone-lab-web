@@ -203,3 +203,14 @@ Keď Contents API aj Raw endpoint vrátia rovnakú novú verziu a SHA-256, použ
 môže znova stlačiť `Aktualizovať`. Ak sa verzia stále nezmení, úplne zavrie a
 znovu otvorí PWA. Tento postup nemení bridge token, lokálne párovanie ani
 rozhodnutia operátora.
+
+## Operator card/count consistency — 1.10.77
+
+The transport directory is not a list of human decisions: it also contains historical records and Instagram contact-registration handoffs. Counting every undecided file while rendering only operator questions produced a positive global count with no decision cards.
+
+- `operatorItems()` is the shared projection for source cards, section counters, the global summary and draft submission. Instagram registration handoffs never enter it. Completed inactive-contact prompts do not count as rendered cards.
+- The summary updates with the completed render, rather than from the unfiltered transport directory. Pending cards appear before history; a newly arriving question opens its source section. Instagram decision cards stay in Instagram, ahead of collapsed contacts.
+- A missing row in an empty/older projection is not retirement. Preserve validated cards across incomplete reads, failed refreshes and empty snapshots. Only explicit validated inactive IDs retire them; expired records never count as pending.
+- Validate the complete inbox before committing its tombstones. Preserve confirmed decisions against delayed pending snapshots with the same request digest. Sending still requires a fresh canonical GET and scoped CAS; retaining a card is never permission to execute its action.
+- Run `tests/test-operator-projection.cjs`: it exercises actual rendered cards and handlers for one Rafi question plus two Instagram questions, a fresh PWA realm, registration-only phantom counts, empty/in-flight/failed refresh, atomic invalid-snapshot rejection, sticky decisions and retirement. Use synthetic records only. Also run updater, pairing, refresh deadline, editing and active-chat tests before release.
+- Existing `test-waiting-details.cjs` has an unrelated legacy expectation that is also failing on the 1.10.76 baseline; this release does not change waiting-detail validation.

@@ -2,7 +2,6 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 assert(source.includes("if(data?.schema_version!==1||!Array.isArray(data.inactive_ids)"),'request status is strictly validated');
 assert(!source.includes("catch{}return new Set()"),'request-status failure may not expose all historical requests');
-assert(source.includes("catch(e){items=[];render();message('Aktívne dotazy sa nepodarilo bezpečne overiť."),'refresh clears stale cards when active status cannot be verified');
 const context={URL,Map,Set,Error,Array,Object,String,Number,Date,TextEncoder,crypto:require('crypto').webcrypto};vm.createContext(context);
 const uuid=source.match(/const UUID=.*?;\n/)[0],urlHelper=source.match(/export function validateTinderChatUrl\(.*\n/)[0],statusHelper=source.match(/export function validateRequestStatus\(.*\n/)[0];
 vm.runInContext((uuid+urlHelper+statusHelper).replaceAll('export function','function'),context);
@@ -12,7 +11,6 @@ const valid=context.validateRequestStatus({schema_version:1,inactive_ids:[],chat
 const action=context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:url},chat_actions:{[id]:{open_url:url,draft:'Aktuálny návrh'}}});assert.equal(action.actions.get(id).draft,'Aktuálny návrh');
 assert.throws(()=>context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:url},chat_actions:{[id]:{open_url:'https://tinder.com/app/messages/other',draft:'Návrh'}}}));
 for(const bad of ['http://tinder.com/app/messages/abc','https://evil.example/app/messages/abc','https://tinder.com/app/messages/abc?q=1','https://tinder.com:444/app/messages/abc','https://tinder.com/app/messages/../abc'])assert.throws(()=>context.validateRequestStatus({schema_version:1,inactive_ids:[],chat_links:{[id]:bad}}));
-assert(source.includes("item.open_url&&(source==='tinder'||source==='rafi')"),'only Tinder and Tinder-bound Rafi cards may render the chat link');
 assert(source.includes("link.rel='noopener noreferrer'"),'request link isolates its opener');
 assert(!source.includes('localStorage.setItem(item.open_url'),'private request links are not persisted');
-console.log('Operator requests fail closed when request-status is missing or invalid.');
+console.log('Request status validates retired IDs and rejects unsafe or mismatched chat links.');

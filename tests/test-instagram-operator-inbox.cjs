@@ -3,7 +3,6 @@ const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 assert(source.includes('p.instagram_operator_questions===undefined'),'Instagram inbox is an explicit input');
 assert(source.includes('operatorIndexSnapshot=[...all,...instagram]'),'authoritative snapshot preserves both inboxes');
 assert(source.includes('instagram_operator_questions:data.instagram_operator_questions'),'request-status forwards Instagram questions');
-assert(source.includes('item.record.request.source===source&&isInstagramOperatorQuestion(item.record.request)'),'section renderer uses the same compatibility rule as the inbox');
 assert(source.includes("heading.append(element('span',`${pending}/${source==='whatsapp'?"),'Instagram section count reports questions rather than contacts');
 assert(source.includes('afterQuestions.push(contacts)')&&source.includes('group.append(...afterQuestions)'),'Instagram questions render before the collapsible contact list');
 assert(source.includes('const scrollTop=window.scrollY'),'render captures the current document position');

@@ -86,7 +86,10 @@ function inactiveRequestChatLink(item){
 }
 function appendTinderActions(parent,url,draft=null){url=validateTinderChatUrl(url);const link=element('a','Otvoriť chat v Tinderi','tinder-chat-open');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);if(draft){const copy=element('button','Skopírovať návrh','secondary tinder-draft-copy');copy.type='button';copy.onclick=()=>copyDraft(draft);parent.append(copy)}}
 export function manualContactNames(manual,index){return [...new Set([...manual,...index.map(c=>c.name)])]}
-function pendingDraftItems(){const now=Date.now();return items.filter(item=>{const r=item.record.request;return !inactiveRequestIds.has(r.id)&&item.record.decision===null&&now>=Date.parse(r.created_at)&&now<Date.parse(r.expires_at)&&(drafts.get(r.id)||'').trim()})}
+function pendingOperatorItem(item,now=Date.now()){const r=item.record.request;return item.record.decision===null&&now>=Date.parse(r.created_at)&&now<Date.parse(r.expires_at)}
+function operatorItems(){const byId=new Map();for(const item of items){const r=item.record.request;if(inactiveRequestIds.has(r.id)||!isInstagramOperatorQuestion(r)||r.source==='inactive'&&!pendingOperatorItem(item))continue;const old=byId.get(r.id);if(!old||!old.record.decision)byId.set(r.id,item)}return [...byId.values()].sort((a,b)=>Number(pendingOperatorItem(b))-Number(pendingOperatorItem(a))||Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at))}
+function pendingDraftItems(){return operatorItems().filter(item=>pendingOperatorItem(item)&&(drafts.get(item.record.request.id)||'').trim())}
+let renderedPendingIds=new Set();
 function syncBadge(){const count=pendingDraftItems().length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
 function rememberNoActionRefresh(command){noActionRefreshPending=command;try{if(command)localStorage.setItem(NO_ACTION_PENDING_KEY,JSON.stringify(command));else localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{}}
 function validateNoActionRefreshDocument(data){
@@ -139,12 +142,14 @@ function render(){
  const scrollTop=window.scrollY;
  if(instagramPending&&instagramPendingUntil&&instagramPendingUntil<=Date.now()){instagramPending=false;instagramDesired=null;instagramPendingUntil=0;}instagramTimeElements=[];
  if(editingPanel()){renderDeferred=true;return}renderDeferred=false;
+ const visible=operatorItems(),pendingIds=new Set(visible.filter(item=>pendingOperatorItem(item)).map(item=>item.record.request.id));
  syncBadge();renderNoAction();$('requests').replaceChildren();
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
-  const matches=items.filter(item=>item.record.request.source===source&&isInstagramOperatorQuestion(item.record.request));
-  const pending=matches.filter(item=>!item.record.decision&&Date.now()<Date.parse(item.record.request.expires_at)).length;
+  const matches=visible.filter(item=>item.record.request.source===source);
+  const pending=matches.filter(item=>pendingOperatorItem(item)).length;
+  if(matches.some(item=>pendingIds.has(item.record.request.id)&&!renderedPendingIds.has(item.record.request.id)))groupOpen.set(source,true);
   const afterQuestions=[];
   group.open=groupOpen.has(source)?groupOpen.get(source):(source!=='whatsapp'&&pending>0);
   const heading=element('summary',name,'group-heading');
@@ -175,10 +180,10 @@ function render(){
    if(!whatsappUnassigned.some(name=>!whatsappManual.includes(name)))unassigned.append(element('p','Žiadne nepriradené kontakty.','group-empty'));
    group.append(unassigned,element('p',whatsappListStatus,'group-empty'));
   }
-  if(!matches.length&&source!=='instagram')group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
+  if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
   $('requests').append(group);
   for(const item of matches){
-   const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at),done=Boolean(d)||expired;
+   const r=item.record.request,d=item.record.decision,expired=Date.now()>=Date.parse(r.expires_at),notStarted=Date.now()<Date.parse(r.created_at),done=Boolean(d)||expired||notStarted;
    const card=element(done?'details':'article',undefined,done?'request request-done':'request');card.id='operator-request-'+r.id;
    if(done)card.append(element('summary',r.title,'request-title'));
    card.append(element('span',name,'source'));
@@ -192,6 +197,7 @@ function render(){
     if(d.outcome==='commented')card.append(element('p',d.comment,'context'));
     if(d.permission==='always'&&!d.revoked_at){const revoke=element('button','Odvolať trvalé povolenie','secondary');revoke.type='button';revoke.disabled=working;revoke.onclick=()=>revokePermission(item);card.append(revoke)}
    }else if(expired)card.append(element('p','Platnosť vypršala. Vyžiadaj novú požiadavku.'));
+   else if(notStarted)card.append(element('p','Dotaz ešte nie je platný. Skontroluj čas zariadenia.'));
    else{
     const controls=element('div',undefined,'decision-buttons');
     for(const [outcome,label,permission] of (r.kind==='work_file'?[['approved','Povoliť raz','once'],['approved','Povoliť trvalo','always'],['rejected','Zakázať']]:[['approved','Schváliť'],['rejected','Zamietnuť']])){const b=element('button',label,outcome==='rejected'?'secondary':'');b.type='button';b.disabled=working;b.onclick=()=>decide(item,outcome,'',permission);controls.append(b)}
@@ -212,7 +218,7 @@ function render(){
  const list=element('ul',undefined,'contact-list');for(const name of manualNames)list.append(contactEntry(name,true));
  manual.append(title,list);if(conversationStatus)manual.append(element('p',conversationStatus,'group-empty'));if(!manualNames.length)manual.append(element('p','Podrž kontakt a vyber Áno.','group-empty'));
  $('requests').append(manual);
- const pendingInactive=items.filter(i=>i.record.request.source==='inactive'&&!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at));
+ const pendingInactive=visible.filter(i=>i.record.request.source==='inactive');
  const inactive=element('details',undefined,'request-group inactive-contacts');inactive.open=groupOpen.get('inactive-contacts')||pendingInactive.length>0;
  const inactiveTitle=element('summary','Neaktívni','group-heading');inactiveTitle.append(element('span',`${pendingInactive.length}/${inactiveChats.filter(c=>c.state==='inactive').length}`,'group-count'));inactiveTitle.onclick=()=>groupOpen.set('inactive-contacts',!inactive.open);
  inactive.append(inactiveTitle);
@@ -221,6 +227,8 @@ function render(){
  for(const chat of [...inactiveChats].sort((a,b)=>Number(b.state==='reactivation_pending')-Number(a.state==='reactivation_pending')||a.name.localeCompare(b.name))){const row=element('li'),link=element('a',chat.name,'contact-name');link.href=chat.open_url;link.target='_blank';link.rel='noopener noreferrer';row.append(link,element('p',chat.state==='reactivation_pending'?'Nová správa · čaká na tvoje potvrdenie reaktivácie.':'Neaktívny · automatické spracovanie je vypnuté.','hint'));inactiveList.append(row)}
  inactive.append(inactiveList,element('p',inactiveStatus,'group-empty'));
  $('requests').append(inactive);
+ renderedPendingIds=pendingIds;
+ $('operator-summary').textContent=`Čakajúce požiadavky: ${pendingIds.size} · Spolu: ${visible.length}`;
  if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop);
  requestAnimationFrame(()=>{if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop)});
 }
@@ -265,14 +273,14 @@ async function applyOperatorInbox(p,authoritative=false){
   const prior=fresh.get(id);if(prior&&prior.record.request_digest!==record.request_digest)throw Error('Konfliktný snapshot dotazu.');
   fresh.set(id,{sha:item.sha??prior?.sha??null,record,from_progress:true,open_url:record.request.chat_url||null});
  }
- const protectedIds=new Set((operatorIndexSnapshot??[]).map(x=>x.record.request.id));
- const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)&&(protectedIds.has(i.record.request.id)||(!i.from_progress&&!(!i.record.decision&&['rafi','tinder'].includes(i.record.request.source)&&WAITING_CASE.test(i.record.request.context_ref))))).map(i=>[i.record.request.id,i]));
+ // Missing entries in a projection are not retirement. Only explicit tombstones remove verified cards.
+ const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)).map(i=>[i.record.request.id,i]));
  for(const [id,item] of fresh){
   if(removed.has(id))continue;
   const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
   byId.set(id,same&&old.record.decision?old:{...old,...item,sha:item.sha??(same?old.sha:null)??null});
  }
- items=[...byId.values()];if(authoritative)operatorIndexSnapshot=[...all,...instagram];if(!editingPanel())render();
+ items=[...byId.values()];inactiveRequestIds=removed;if(authoritative)operatorIndexSnapshot=[...all,...instagram];if(!editingPanel())render();
 }
 export function validateWaitingDetails(value){
  if(value===undefined)return null;
@@ -722,14 +730,14 @@ async function readProgress(){
  }catch{showAutomation(null);preserveProgressOnFailure();$('tinder-overall-count').textContent='Aktuálny počet nie je overený.';$('tinder-count').textContent='Aktuálny stav nie je overený.';$('tinder-overall-meter').value=0;$('tinder-meter').value=0;renderChannelTotals(null,'Aktuálny počet nie je overený.');$('tinder-detail').textContent='Obnovenie priebehu zlyhalo. Posledné overené chaty zostávajú zobrazené.';$('tinder-eta').textContent='Skontroluj pripojenie MacBooku a zopakuj synchronizáciu.'}
 }
 export function validateRequestStatus(data){const chat_links=data?.chat_links===undefined?{}:data.chat_links,chat_actions=data?.chat_actions===undefined?{}:data.chat_actions;if(data?.schema_version!==1||!Array.isArray(data.inactive_ids)||data.inactive_ids.length>10000||!data.inactive_ids.every(id=>UUID.test(id))||!chat_links||typeof chat_links!=='object'||Array.isArray(chat_links)||Object.keys(chat_links).length>100||!chat_actions||typeof chat_actions!=='object'||Array.isArray(chat_actions)||Object.keys(chat_actions).length>100)throw Error('Stav aktívnych dotazov má neplatný formát.');const links=new Map(),actions=new Map();for(const [id,url] of Object.entries(chat_links)){if(!UUID.test(id))throw Error('Stav aktívnych dotazov má neplatný formát.');links.set(id,validateTinderChatUrl(url))}for(const [id,action] of Object.entries(chat_actions)){if(!UUID.test(id)||!action||typeof action!=='object'||Object.keys(action).some(k=>!['open_url','draft'].includes(k))||typeof action.draft!=='string'||!action.draft.trim()||action.draft.length>1500)throw Error('Stav aktívnych dotazov má neplatný formát.');const open_url=validateTinderChatUrl(action.open_url);if(links.get(id)!==open_url)throw Error('Stav aktívnych dotazov má neplatný formát.');actions.set(id,{open_url,draft:action.draft})}return {inactive:new Set(data.inactive_ids),links,actions}}
-async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined||data.instagram_operator_questions!==undefined){inactiveRequestIds=new Set([...inactiveRequestIds,...status.inactive]);await applyOperatorInbox({operator_questions:data.operator_questions,instagram_operator_questions:data.instagram_operator_questions,operator_inactive_ids:[...inactiveRequestIds]},true)}return status}
+async function requestStatus(){const file=await api('/contents/operator/request-status.json?ref=main'),data=decode(file.content),status=validateRequestStatus(data);if(data.operator_questions!==undefined||data.instagram_operator_questions!==undefined){await applyOperatorInbox({operator_questions:data.operator_questions,instagram_operator_questions:data.instagram_operator_questions,operator_inactive_ids:[...new Set([...inactiveRequestIds,...status.inactive])]},true)}return status}
 async function refresh(){
  const controller=new AbortController();refreshController=controller;
  const timer=setTimeout(()=>controller.abort(),REFRESH_TIMEOUT_MS);
  try{return await refreshContents()}catch(e){if(controller.signal.aborted)throw Error('Obnovenie trvalo príliš dlho. Skontroluj spojenie a zopakuj synchronizáciu.');throw e}
  finally{clearTimeout(timer);if(refreshController===controller)refreshController=null}
 }
-async function refreshContents(){try{await loadProgress();const status=await requestStatus(),inactive=status.inactive;inactiveRequestIds=new Set([...inactiveRequestIds,...inactive]);items=items.filter(i=>!inactiveRequestIds.has(i.record.request.id));const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5),open_url=status.links.get(id),action=status.actions.get(id);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push({...previous,...(open_url?{open_url}:{open_url:null}),...(action?{draft:action.draft}:{draft:null})});continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);next.push({sha:file.sha,record,...(open_url&&['tinder','rafi','inactive'].includes(record.request.source)?{open_url,draft:action?.draft??null}:{})})}for(const item of items.filter(i=>i.from_progress&&!inactiveRequestIds.has(i.record.request.id)))if(!next.some(n=>n.record.request.id===item.record.request.id))next.push(item);lastRefresh=Date.now();items=next.sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();const pending=items.filter(i=>!i.record.decision&&Date.now()<Date.parse(i.record.request.expires_at)).length;message(`Čakajúce požiadavky: ${pending} · Spolu: ${items.length} · Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}catch(e){items=items.filter(i=>i.from_progress);render();message('Aktívne dotazy sa nepodarilo bezpečne overiť. Skús synchronizáciu znova.');throw e}finally{if(token&&!refreshController?.signal.aborted){await loadInactiveChats();await loadWhatsAppNames();await loadInstagramContacts();await loadConversationIndex();}}}
+async function refreshContents(){try{await loadProgress();const status=await requestStatus(),inactive=status.inactive;inactiveRequestIds=new Set([...inactiveRequestIds,...inactive]);items=items.filter(i=>!inactiveRequestIds.has(i.record.request.id));const list=await api(`/contents/${PREFIX}?ref=main`);if(!Array.isArray(list)||list.length>=1000)throw Error('Fronta má neplatný formát alebo prekročila limit.');const files=list.filter(f=>f.type==='file'&&UUID.test(f.name.replace(/\.json$/,''))&&f.name.endsWith('.json')&&!inactive.has(f.name.slice(0,-5)));if(files.length>100)throw Error('Fronta prekročila 100 záznamov. Najprv archivuj vybavené požiadavky.');const next=[];for(const f of files){const id=f.name.slice(0,-5),open_url=status.links.get(id),action=status.actions.get(id);const previous=items.find(i=>i.record.request.id===id&&i.sha===f.sha);if(previous){next.push({...previous,...(open_url?{open_url}:{open_url:null}),...(action?{draft:action.draft}:{draft:null})});continue}const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);next.push({sha:file.sha,record,...(open_url&&['tinder','rafi','inactive'].includes(record.request.source)?{open_url,draft:action?.draft??null}:{})})}for(const item of items.filter(i=>!inactiveRequestIds.has(i.record.request.id)))if(!next.some(n=>n.record.request.id===item.record.request.id))next.push(item);lastRefresh=Date.now();items=next.map(item=>{const old=items.find(i=>i.record.request.id===item.record.request.id);return old?.record.decision&&old.record.request_digest===item.record.request_digest&&!item.record.decision?old:item}).sort((a,b)=>Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at)||b.record.request.id.localeCompare(a.record.request.id));render();message(`Načítané ${new Date().toLocaleTimeString('sk-SK')}.`);}catch(e){render();message('Obnovenie dotazov zlyhalo. Posledné overené dotazy zostávajú zobrazené; skús synchronizáciu znova.');throw e}finally{if(token&&!refreshController?.signal.aborted){await loadInactiveChats();await loadWhatsAppNames();await loadInstagramContacts();await loadConversationIndex();}}}
 function decisionFeedback(item,text){decisionMessages.set(item.record.request.id,text);const feedback=$('operator-feedback-'+item.record.request.id);if(feedback)feedback.textContent=text;message(text)}
 async function decide(item,outcome,comment='',permission=null,confirmed=false){if(working){decisionFeedback(item,'Prebieha iné ukladanie. Po jeho dokončení skús odoslať znova.');return}if(!token){decisionFeedback(item,'Bridge nie je pripojený. Obnov pripojenie tlačidlom synchronizácie.');return}comment=comment.trim();if(outcome==='commented'&&(!comment||comment.length>3000)){decisionFeedback(item,'Napíš vyjadrenie od 1 do 3000 znakov.');return}const prompt=item.record.request.kind==='work_file'&&outcome==='approved'?`${permission==='always'?'Povoliť trvalo pre tento presný súbor a túto operáciu, aj pre budúce zmeny':'Povoliť iba túto jednu presnú zmenu'}?\n\n${item.record.request.file_change.path}\nOperácia: ${item.record.request.file_change.operation}\n\n${item.record.request.proposed_action}`:outcome==='commented'?`Odoslať tvoje vyjadrenie?\n\n${item.record.request.title}\n\n${comment}`:`${outcome==='approved'?'Schváliť':'Zamietnuť'} túto presnú požiadavku?\n\n${item.record.request.title}\n\n${item.record.request.proposed_action}`;if(!confirmed&&!confirm(prompt)){decisionFeedback(item,'Potvrdenie sa neuskutočnilo. Rozhodnutie nebolo odoslané.');return}working=true;document.activeElement?.blur?.();decisionFeedback(item,outcome==='commented'?'Odosielam vyjadrenie…':'Ukladám rozhodnutie…');render();try{if(backgroundRefresh){refreshController?.abort();try{await backgroundRefresh}catch{}}const id=item.record.request.id;const file=await api(`/contents/${PREFIX}/${id}.json?ref=main`),record=await validate(decode(file.content),id);if((item.sha!==null&&file.sha!==item.sha)||record.request_digest!==item.record.request_digest||record.decision!==null||Date.now()<Date.parse(record.request.created_at)||Date.now()>=Date.parse(record.request.expires_at))throw Error('Požiadavka sa zmenila, bola vybavená alebo vypršala. Obnov zoznam.');record.decision={outcome,operator:'Tomy',decided_at:new Date().toISOString(),request_digest:record.request_digest,...(outcome==='commented'?{comment}:{}),...(permission?{permission}:{})};const saved=await api(`/contents/${PREFIX}/${id}.json`,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:`Tomy ${outcome} ${id}`,content:encode(record)})});item.record=record;item.sha=saved.content?.sha||file.sha;items=items.map(current=>current.record.request.id===id?{...current,record,sha:item.sha}:current);drafts.delete(id);saveRequestDrafts();render();decisionFeedback(item,outcome==='commented'?'Vyjadrenie je uložené v bridge a pripravené pre zdrojovú aplikáciu.':'Rozhodnutie je uložené v bridge. Vykonanie akcie zostáva na zdrojovej aplikácii.');return true}catch(e){decisionFeedback(item,e.status===404?'Dotaz ešte nie je doručený do bridge. Tvoje vyjadrenie zostalo uložené; skús synchronizáciu.':e.message||'Rozhodnutie sa nepodarilo uložiť. Obnov zoznam pred ďalším pokusom.')}finally{working=false;render()}}
 async function revokePermission(item){

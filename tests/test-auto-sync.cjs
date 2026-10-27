@@ -10,7 +10,7 @@ function realFunction(name){
 const start=source.indexOf('async function pollBridge()');
 const end=source.indexOf('\nsetInterval(pollBridge,60000)',start);
 assert(start>=0&&end>start,'real pollBridge implementation is present');
-assert(!source.includes('setInterval(pollProgress'),'legacy progress-only timer is removed');
+assert(source.includes('setInterval(pollProgress,15000)'),'independent read-only inbox polling is retained');
 
 const implementation=`
 const RATE_KEY='iphone-lab-github-pause-until';
@@ -25,13 +25,13 @@ this.pollBridge=pollBridge;
 let now=1_800_000_000_000;
 const stored=new Map();
 const context={
- Date:{now:()=>now},Number,Math,String,Error,
+ Date:{now:()=>now},Number,Math,String,Error,setInterval(){},
  localStorage:{
   getItem:key=>stored.get(key)??null,
   setItem:(key,value)=>stored.set(key,value),
   removeItem:key=>stored.delete(key),
  },
- working:false,
+ working:false,backgroundRefresh:null,editingPanel:()=>false,
  document:{visibilityState:'visible'},
  navigator:{onLine:true},
  token:'paired',
@@ -48,7 +48,7 @@ vm.runInContext(implementation,context);
 (async()=>{
  await context.pollBridge();
  assert.equal(context.refreshCalls,1,'one timer tick performs one full refresh');
- assert.equal(context.renderCalls,2,'working state renders before and after refresh');
+ assert.equal(context.renderCalls,1,'read-only refresh finishes with a render without locking Send');
  assert.equal(context.working,false,'successful refresh releases working state');
  assert.equal(context.decideCalls,0,'background refresh never submits decisions');
 
