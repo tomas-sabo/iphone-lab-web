@@ -10,6 +10,7 @@ let noActionRefreshBusy=false,noActionRefreshPending=null,noActionRefreshMessage
 try{noActionRefreshPending=JSON.parse(localStorage.getItem(NO_ACTION_PENDING_KEY)||'null')}catch{}
 let noActionTimeElements=[],noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.',progressUpdatedAt=null;
+let whatsappControl=null,whatsappSaving=false,whatsappPending=false,whatsappDesired=null,whatsappControlError='',whatsappPendingUntil=0;
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
 let instagramTimeElements=[];
 let instagramContacts=[],instagramControl=null,instagramSaving=false,instagramPending=false,instagramDesired=null,instagramControlError='',instagramPendingUntil=0;
@@ -36,7 +37,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){decisionMessages.clear();operatorIndexSnapshot=null;noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){whatsappControl=null;whatsappPending=false;whatsappSaving=false;whatsappDesired=null;whatsappPendingUntil=0;whatsappControlError='';whatsappWatch++;decisionMessages.clear();operatorIndexSnapshot=null;noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -178,7 +179,7 @@ function render(){
    for(const name of whatsappUnassigned.filter(name=>!whatsappManual.includes(name)))pendingList.append(contactEntry(name));
    unassigned.append(toggle,pendingList);
    if(!whatsappUnassigned.some(name=>!whatsappManual.includes(name)))unassigned.append(element('p','Žiadne nepriradené kontakty.','group-empty'));
-   group.append(unassigned,element('p',whatsappListStatus,'group-empty'));
+   group.append(unassigned,element('p',whatsappControlError|| (whatsappPending?'Oranžový prepínač čaká na potvrdenie z MacBooku…':whatsappListStatus),'group-empty'));
   }
   if(!matches.length)group.append(element('p','Zatiaľ žiadne požiadavky.','group-empty'));
   $('requests').append(group);
@@ -538,7 +539,7 @@ function validateContacts(data){
 }
 function applyContacts(data){whatsappNames=data.names;whatsappUnassigned=data.unpaired_names===undefined?[...data.names]:data.unpaired_names;whatsappManual=data.manual_names||[];whatsappListStatus='Uložené WhatsApp kontakty.'}
 async function loadWhatsAppNames(){
- try{const file=await api('/contents/operator/whatsapp-contacts.json?ref=main');applyContacts(validateContacts(decode(file.content)))}
+ try{const file=await api('/contents/operator/whatsapp-contacts.json?ref=main');applyContacts(validateContacts(decode(file.content)));await loadWhatsAppAutomation()}
  catch(e){whatsappListStatus=e.status===404?'Zoznam kontaktov zatiaľ nie je pripravený.':'Kontakty sa neobnovili; zobrazený zoznam môže byť starší.'}
  render();
 }
@@ -580,6 +581,41 @@ async function changeInstagramAutomation(username){
   message('Zmena uložená. Čakám na potvrdenie z MacBooku.');watchInstagramConfirmation(doc.request.id);
  }catch(e){instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError=e.message;message(e.message)}
  finally{instagramSaving=false;render()}
+}
+const WHATSAPP_CONTROL_PATH='/contents/operator/whatsapp-automation.json';
+function validWhatsAppStatus(s){return freshAutomation(s)&&s.contacts&&typeof s.contacts==='object'&&!Array.isArray(s.contacts)&&Object.entries(s.contacts).every(([u,v])=>typeof u==='string'&&u.length>0&&u.length<=160&&v&&typeof v.enabled==='boolean')}
+async function loadWhatsAppAutomation(){
+ try{const doc=decode((await api(WHATSAPP_CONTROL_PATH+'?ref=main')).content);if(doc.schema_version!==1||!validWhatsAppStatus(doc.status))throw Error('Neplatný stav WhatsAppu.');if(!token)return false;whatsappControl=doc.status;whatsappControlError='';whatsappPending=doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now()?(doc.request.username||'*'):false;whatsappPendingUntil=whatsappPending?Date.parse(doc.request.expires_at):0;if(!whatsappPending)whatsappDesired=null;else if(doc.request?.username)whatsappDesired=doc.request.enabled;return true}catch{whatsappControlError='Stav WhatsAppu sa neobnovil. Zobrazuje sa posledný známy stav; prepnutie ho najprv overí.';if(whatsappPendingUntil<=Date.now()){whatsappPending=false;whatsappDesired=null;whatsappPendingUntil=0}return false}
+}
+let whatsappWatch=0;
+async function watchWhatsAppConfirmation(id){
+ const generation=++whatsappWatch;
+ for(const delay of [2000,5000,10000,20000,30000]){
+  await wait(delay);if(generation!==whatsappWatch||!token||!whatsappPending)return;
+  await loadWhatsAppAutomation();render();
+  if(!whatsappControl){message('Potvrdenie z MacBooku sa nepodarilo načítať. Skús synchronizáciu.');return}
+  if(!whatsappPending){message(whatsappControl.receipt?.id===id&&whatsappControl.receipt.result==='applied'?'Nastavenie WhatsApp chatu je potvrdené z MacBooku.':'Zmena nebola potvrdená. Zobrazuje sa posledný overený stav.');return}
+ }
+ message('Zmena čaká na MacBook. Skontroluj ju tlačidlom synchronizácie.');
+}
+async function changeWhatsAppAutomation(username){
+ if(!token||whatsappSaving)return;
+ if(whatsappPending&&whatsappPendingUntil>Date.now()){message('Predošlá zmena ešte čaká na MacBook.');return}
+ const known=whatsappControl?.contacts?.[username];let desired=known?!known.enabled:null;
+ whatsappDesired=desired;whatsappPending=username;whatsappPendingUntil=Date.now()+120000;whatsappSaving=true;whatsappControlError='';render();
+ try{
+  const file=await api(WHATSAPP_CONTROL_PATH+'?ref=main'),doc=decode(file.content);
+  if(doc.schema_version!==1||!validWhatsAppStatus(doc.status))throw Error('Stav WhatsAppu sa nepodarilo overiť. Skús prepínač znova.');
+  if(!doc.status.contacts[username])throw Error('Automatizácia pre tento chat zatiaľ nie je povolená na MacBooku.');
+  if(doc.request&&doc.request.id!==doc.status.receipt?.id&&Date.parse(doc.request.expires_at)>Date.now())throw Error('Predošlá zmena ešte čaká na MacBook.');
+  if(desired===null)desired=!doc.status.contacts[username].enabled;
+  whatsappControl=doc.status;whatsappDesired=desired;
+  doc.request={id:crypto.randomUUID(),operator:'Tomy',username,enabled:desired,expected_revision:doc.status.revision,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+120000).toISOString()};
+  whatsappPendingUntil=Date.parse(doc.request.expires_at);
+  await api(WHATSAPP_CONTROL_PATH,{method:'PUT',body:JSON.stringify({branch:'main',sha:file.sha,message:'Request WhatsApp chat autopilot change',content:encode(doc)})});
+  message('Zmena uložená. Čakám na potvrdenie z MacBooku.');watchWhatsAppConfirmation(doc.request.id);
+ }catch(e){whatsappPending=false;whatsappDesired=null;whatsappPendingUntil=0;whatsappControlError=e.message;message(e.message)}
+ finally{whatsappSaving=false;render()}
 }
 export function instagramActivityText(latest,now=Date.now()){
  if(!latest)return 'Čas poslednej správy nedostupný';
@@ -639,7 +675,14 @@ function contactEntry(name,manual=false){
  button.onpointerup=cancel;button.onpointercancel=cancel;button.onpointerleave=cancel;
  button.oncontextmenu=e=>{e.preventDefault();cancel();showManualChoice(name)};
  button.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();detail?openConversation(detail.id):showManualChoice(name)}};
- row.append(button);
+ const head=element('div',undefined,'instagram-chat-heading');head.append(button);
+ const state=whatsappControl?.contacts?.[name],pending=whatsappPending===name,checked=state?.enabled===true;
+ const toggle=element('button',checked?'ON':'OFF','instagram-toggle');toggle.type='button';
+ toggle.setAttribute?.('role','switch');toggle.setAttribute?.('aria-label','Automatické odpovede WhatsApp pre '+name);
+ toggle.setAttribute?.('aria-checked',String(checked));toggle.setAttribute?.('aria-busy',String(pending));
+ toggle.disabled=!token||whatsappSaving||Boolean(whatsappPending)||!state;
+ toggle.title=!state?'Autopilot pre kontakt ešte nie je pripravený':pending?'Čaká na potvrdenie z MacBooku':'Autopilot WhatsApp';
+ toggle.onclick=e=>{e.preventDefault();e.stopPropagation();changeWhatsAppAutomation(name)};head.append(toggle);row.append(head);
  if(manual){const mapped=conversationIndex.filter(c=>c.name===name&&c.open_url);if(mapped.length===1)appendTinderActions(row,mapped[0].open_url,mapped[0].draft)}
  return row;
 }
