@@ -1,0 +1,6 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const setup=fs.readFileSync(__dirname+'/test-operator-projection.cjs','utf8').split('const walk=')[0];
+const outer={require,__dirname,Buffer,URL,TextEncoder,TextDecoder,Uint8Array,Date,AbortController,AbortSignal,console};vm.createContext(outer);vm.runInContext(setup+'\nglobalThis.h=harness();',outer);const h=outer.h;
+const status={enabled:true,revision:'a'.repeat(64),checked_at:new Date().toISOString(),receipt:null};
+h.c.api=async path=>({content:Buffer.from(JSON.stringify(path.includes('tinder-automation.json')?{schema_version:1,status}:{schema_version:1,updated_at:'2000-01-01T00:00:00Z'})).toString('base64')});
+(async()=>{await vm.runInContext('readProgress()',h.c);assert.equal(h.$('tinder-automation-toggle').textContent,'Zapnuté');assert.equal(h.$('tinder-automation-toggle').disabled,false);h.c.api=async()=>{throw Error('Offline')};await vm.runInContext('readProgress()',h.c);assert.equal(h.$('tinder-automation-toggle').textContent,'Stav neznámy');assert.equal(h.$('tinder-automation-toggle').disabled,true);console.log('Stale progress cannot hide independently verified automation; offline never fabricates ON.');})().catch(e=>{console.error(e);process.exit(1)});
