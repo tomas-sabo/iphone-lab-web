@@ -866,12 +866,12 @@ async function pollBridge(){
  finally{if(backgroundRefresh===pending)backgroundRefresh=null;if(!working)render()}
 }
 async function pollProgress(){
- if(!token||working||progressLoading||editingPanel()||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;
+ if(!token||working||backgroundRefresh||progressLoading||editingPanel()||document.visibilityState==='hidden'||navigator.onLine===false||Date.now()<readPause())return;
  try{await requestStatus()}catch{}
  await loadProgress();
 }
-setInterval(pollProgress,15000);
-setInterval(pollBridge,60000);setInterval(refreshWaitingDurations,1000);setInterval(expirePipelineRows,1000);
+setInterval(pollProgress,60000);
+setInterval(pollBridge,300000);setInterval(refreshWaitingDurations,1000);setInterval(expirePipelineRows,1000);
 document.addEventListener('visibilitychange',async()=>{
  if(document.visibilityState==='hidden'||working||editingPanel())return;
  if(!token){await restorePairing();return}

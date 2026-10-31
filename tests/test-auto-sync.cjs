@@ -8,9 +8,9 @@ function realFunction(name){
 }
 
 const start=source.indexOf('async function pollBridge()');
-const end=source.indexOf('\nsetInterval(pollBridge,60000)',start);
+const end=source.indexOf('\nsetInterval(pollBridge,300000)',start);
 assert(start>=0&&end>start,'real pollBridge implementation is present');
-assert(source.includes('setInterval(pollProgress,15000)'),'independent read-only inbox polling is retained');
+assert(source.includes('setInterval(pollProgress,60000)'),'independent read-only inbox polling is retained');
 
 const implementation=`
 const RATE_KEY='iphone-lab-github-pause-until';
@@ -92,5 +92,5 @@ vm.runInContext(implementation,context);
  context.pauseUntil(now+99_999_999);
  assert.equal(Number(stored.get('iphone-lab-github-pause-until')),now+7_200_000,'new pause is bounded to two hours');
 
- console.log('Visible app behavior performs one guarded full read-only bridge refresh per minute.');
+ console.log('Visible app behavior performs one guarded full read-only bridge refresh per five minutes.');
 })().catch(error=>{console.error(error);process.exitCode=1});
