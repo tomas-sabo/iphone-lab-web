@@ -148,7 +148,7 @@ function render(){
  for(const [source,name] of SOURCES){
   if(source==='inactive')continue;
   const group=element('details',undefined,'request-group');
-  const matches=visible.filter(item=>item.record.request.source===source);
+  const matches=visible.filter(item=>item.record.request.source===source).sort((a,b)=>Number(b.priority==='urgent'||b.record.request.priority==='urgent')-Number(a.priority==='urgent'||a.record.request.priority==='urgent'));
   const pending=matches.filter(item=>pendingOperatorItem(item)).length;
   if(matches.some(item=>pendingIds.has(item.record.request.id)&&!renderedPendingIds.has(item.record.request.id)))groupOpen.set(source,true);
   const afterQuestions=[];
@@ -188,7 +188,7 @@ function render(){
    const card=element(done?'details':'article',undefined,done?'request request-done':'request');card.id='operator-request-'+r.id;
    if(done)card.append(element('summary',r.title,'request-title'));
    card.append(element('span',name,'source'));
-   if(!done)card.append(element('h3',r.title,'request-title'));
+   if(!done)card.append(element('h3',(item.priority==='urgent'&&!r.title.startsWith('URGENT')?'URGENT — ':'')+r.title,'request-title'));
    const chatUrl=item.open_url||r.chat_url;if(chatUrl&&['tinder','rafi'].includes(source))appendTinderActions(card,chatUrl,item.draft);
    card.append(element('p',r.body,'context'),element('h4','Čo schvaľuješ'),element('p',r.proposed_action,'action'));
    if(item.sha===null)card.append(element('p','Stav doručenia zatiaľ nie je potvrdený. Pri odoslaní overím aktuálny dotaz priamo v bridge.','hint'));
@@ -272,7 +272,7 @@ async function applyOperatorInbox(p,authoritative=false){
   if(instagramOnly&&record.request.source!=='instagram')throw Error('Neplatný Instagram snapshot dotazu.');
   if(!isInstagramOperatorQuestion(record.request))continue;
   const prior=fresh.get(id);if(prior&&prior.record.request_digest!==record.request_digest)throw Error('Konfliktný snapshot dotazu.');
-  fresh.set(id,{sha:item.sha??prior?.sha??null,record,from_progress:true,open_url:record.request.chat_url||null});
+  fresh.set(id,{sha:item.sha??prior?.sha??null,record,priority:item.priority==='urgent'||record.request.priority==='urgent'?'urgent':'normal',from_progress:true,open_url:record.request.chat_url||null});
  }
  // Missing entries in a projection are not retirement. Only explicit tombstones remove verified cards.
  const byId=new Map(items.filter(i=>!removed.has(i.record.request.id)).map(i=>[i.record.request.id,i]));

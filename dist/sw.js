@@ -49,8 +49,8 @@ self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{}}catch{}
  const count=Number.isSafeInteger(data.count)&&data.count>=0?Math.min(data.count,10000):1;
  event.waitUntil((async()=>{
-  await self.registration.showNotification(data.test===true?'Skúšobné upozornenie':'Nový dotaz pre Tomyho',{
-   body:data.test===true?'Upozornenia sú pripravené.':'Otvor aplikáciu a pozri si nový dotaz.',
+  await self.registration.showNotification(data.urgent===true?'URGENT dotaz pre Tomyho':data.test===true?'Skúšobné upozornenie':'Nový dotaz pre Tomyho',{
+   body:data.urgent===true?'Otvor aplikáciu a vybav urgentný dotaz.':data.test===true?'Upozornenia sú pripravené.':'Otvor aplikáciu a pozri si nový dotaz.',
    icon:new URL('icon-192.png',ROOT).href,badge:new URL('icon-192.png',ROOT).href,
    tag:'operator-questions',renotify:true,silent:false,data:{kind:'operator'}
   });
