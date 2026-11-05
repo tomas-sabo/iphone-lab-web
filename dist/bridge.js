@@ -5,6 +5,7 @@ const $=id=>document.getElementById(id);
 let token='',items=[],working=false,backgroundRefresh=null,operatorPointerBusy=false;
 const decisionMessages=new Map();
 let inactiveRequestIds=new Set(),operatorIndexSnapshot=null;
+let appBadgeConfirmed=false,appBadgeValue=null,appBadgeQueue=Promise.resolve();
 const NO_ACTION_REFRESH_PATH='/contents/operator/tinder-no-action-refresh.json',NO_ACTION_PENDING_KEY='iphone-lab-no-action-refresh-v1';
 let noActionRefreshBusy=false,noActionRefreshPending=null,noActionRefreshMessage='',noActionRefreshChecked=0;
 try{noActionRefreshPending=JSON.parse(localStorage.getItem(NO_ACTION_PENDING_KEY)||'null')}catch{}
@@ -37,7 +38,7 @@ function readPause(){try{const value=Number(localStorage.getItem(RATE_KEY))||0,n
 function pauseUntil(t){try{const now=Date.now();localStorage.setItem(RATE_KEY,String(Math.max(now+1000,Math.min(Number(t)||now+60000,now+7200000))))}catch{}}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PAIRING_KEY='iphone-lab-bridge-pairing-v1';
-function forgetPairing(){whatsappControl=null;whatsappPending=false;whatsappSaving=false;whatsappDesired=null;whatsappPendingUntil=0;whatsappControlError='';whatsappWatch++;decisionMessages.clear();operatorIndexSnapshot=null;noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
+function forgetPairing(){appBadgeConfirmed=false;appBadgeValue=null;whatsappControl=null;whatsappPending=false;whatsappSaving=false;whatsappDesired=null;whatsappPendingUntil=0;whatsappControlError='';whatsappWatch++;decisionMessages.clear();operatorIndexSnapshot=null;noActionRefreshPending=null;noActionRefreshMessage='';try{localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{};inactiveRequestIds.clear();noActionChats=[];incomingScannedAt=null;bridgeHealthText='';instagramContacts=[];instagramControl=null;instagramPending=false;instagramDesired=null;instagramPendingUntil=0;instagramControlError='';drafts.clear();saveRequestDrafts();try{localStorage.removeItem(PAIRING_KEY)}catch{}}
 function savedPairing(){try{return localStorage.getItem(PAIRING_KEY)||''}catch{return ''}}
 function rememberPairing(){try{localStorage.setItem(PAIRING_KEY,token);return true}catch{return false}}
 function connected(){ $('connect').hidden=true;$('disconnect').hidden=false; }
@@ -91,6 +92,14 @@ function pendingOperatorItem(item,now=Date.now()){const r=item.record.request;re
 function operatorItems(){const byId=new Map();for(const item of items){const r=item.record.request;if(inactiveRequestIds.has(r.id)||!isInstagramOperatorQuestion(r)||r.source==='inactive'&&!pendingOperatorItem(item))continue;const old=byId.get(r.id);if(!old||!old.record.decision)byId.set(r.id,item)}return [...byId.values()].sort((a,b)=>Number(pendingOperatorItem(b))-Number(pendingOperatorItem(a))||Date.parse(b.record.request.created_at)-Date.parse(a.record.request.created_at))}
 function pendingDraftItems(){return operatorItems().filter(item=>pendingOperatorItem(item)&&(drafts.get(item.record.request.id)||'').trim())}
 let renderedPendingIds=new Set();
+function syncAppBadge(count){
+ if(!appBadgeConfirmed||!Number.isSafeInteger(count)||count<0||count===appBadgeValue)return;
+ appBadgeValue=count;
+ appBadgeQueue=appBadgeQueue.catch(()=>{}).then(async()=>{
+  if(count===0){if(navigator.clearAppBadge)await navigator.clearAppBadge();else if(navigator.setAppBadge)await navigator.setAppBadge(0)}
+  else if(navigator.setAppBadge)await navigator.setAppBadge(count);
+ }).catch(()=>{appBadgeValue=null});
+}
 function syncBadge(){const count=pendingDraftItems().length;$('sync-count').textContent=String(count);$('sync-count').hidden=!count}
 function rememberNoActionRefresh(command){noActionRefreshPending=command;try{if(command)localStorage.setItem(NO_ACTION_PENDING_KEY,JSON.stringify(command));else localStorage.removeItem(NO_ACTION_PENDING_KEY)}catch{}}
 function validateNoActionRefreshDocument(data){
@@ -229,6 +238,7 @@ function render(){
  inactive.append(inactiveList,element('p',inactiveStatus,'group-empty'));
  $('requests').append(inactive);
  renderedPendingIds=pendingIds;
+ syncAppBadge(pendingIds.size);
  $('operator-summary').textContent=`Čakajúce požiadavky: ${pendingIds.size} · Spolu: ${visible.length}`;
  if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop);
  requestAnimationFrame(()=>{if(Math.abs(window.scrollY-scrollTop)>1)window.scrollTo(0,scrollTop)});
@@ -281,7 +291,7 @@ async function applyOperatorInbox(p,authoritative=false){
   const old=items.find(i=>i.record.request.id===id),same=old?.record.request_digest===item.record.request_digest;
   byId.set(id,same&&old.record.decision?old:{...old,...item,sha:item.sha??(same?old.sha:null)??null});
  }
- items=[...byId.values()];inactiveRequestIds=removed;if(authoritative)operatorIndexSnapshot=[...all,...instagram];if(!editingPanel())render();
+ items=[...byId.values()];inactiveRequestIds=removed;appBadgeConfirmed=true;syncAppBadge(operatorItems().filter(item=>pendingOperatorItem(item)).length);if(authoritative)operatorIndexSnapshot=[...all,...instagram];if(!editingPanel())render();
 }
 export function validateWaitingDetails(value){
  if(value===undefined)return null;

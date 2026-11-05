@@ -1,0 +1,5 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
+const a=source.indexOf('function syncAppBadge('),b=source.indexOf('function syncBadge()',a);
+const calls=[],c={appBadgeConfirmed:false,appBadgeValue:null,appBadgeQueue:Promise.resolve(),Number,Promise,navigator:{setAppBadge:async n=>calls.push(n),clearAppBadge:async()=>calls.push('clear')}};vm.createContext(c);vm.runInContext(source.slice(a,b),c);
+(async()=>{c.syncAppBadge(0);await c.appBadgeQueue;assert.deepEqual(calls,[],'Startup without confirmed snapshot must not erase existing badge');c.appBadgeConfirmed=true;c.syncAppBadge(2);c.syncAppBadge(0);await c.appBadgeQueue;assert.deepEqual(calls,[2,'clear']);c.syncAppBadge(0);await c.appBadgeQueue;assert.equal(calls.length,2);assert(source.includes('syncAppBadge(pendingIds.size)'));assert(source.includes('appBadgeConfirmed=true;syncAppBadge(operatorItems().filter'));console.log('Confirmed pending count updates icon; zero clears stale push badge; startup and duplicate writes guarded.');})().catch(e=>{console.error(e);process.exit(1)});
