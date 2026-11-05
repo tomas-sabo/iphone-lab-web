@@ -338,17 +338,12 @@ export function preserveProgressOnFailure(){
  clearWaiting('Priebeh sa zatiaľ nepodarilo načítať. Skús synchronizáciu.');return false;
 }
 export function pipelineDuration(row,now=Date.now()){const end=row.confirmed_at?Date.parse(row.confirmed_at):now,start=Date.parse(row.incoming_received_at||row.waiting_since),seconds=Math.max(0,Math.floor((end-start)/1000));return seconds<60?seconds+' s':seconds<3600?Math.floor(seconds/60)+' min '+seconds%60+' s':Math.floor(seconds/3600)+' h '+Math.floor(seconds%3600/60)+' min '+seconds%60+' s'}
-export function preloadWaitText(row){if(!row.incoming_received_at)return '—';return pipelineDuration({waiting_since:row.incoming_received_at,completed_at:row.waiting_since})}
+export function preloadWaitText(row){if(!row.incoming_received_at)return '—';return pipelineDuration({waiting_since:row.incoming_received_at,confirmed_at:row.waiting_since})}
 export function chatProjections(p){
- const waiting=validateWaitingDetails(p.awaiting_details),count=Number.isSafeInteger(p.waiting_count)?p.waiting_count:p.awaiting_operator;
- if(waiting&&Number.isSafeInteger(count)&&waiting.length!==count)throw Error('Počet stojacich chatov nesúhlasí so súhrnom.');
  const active=validateActiveDetails(p.active_details);
  if(active&&(!Number.isSafeInteger(p.active_count)||p.active_count!==active.length))throw Error('Počet aktívnych chatov nesúhlasí so súhrnom.');
- const ours=waiting?.filter(row=>row.state!=='awaiting_reply'&&row.unblock?.route!=='operator')??null;
- const ids=new Set(ours?.map(row=>row.case_id)||[]);
- if(active?.some(row=>ids.has(row.case_id)))throw Error('Chat nemôže byť v oboch zoznamoch.');
- const pipeline=p.pipeline_details===undefined?null:validatePipelineDetails(p.pipeline_details).filter(row=>row.unblock?.route!=='operator');
- return {waiting:pipeline||ours,waitingCount:pipeline?pipeline.length:ours?ours.length:Number.isSafeInteger(count)?count:0,active};
+ const pipeline=validatePipelineDetails(p.pipeline_details??[]).filter(row=>row.unblock?.route!=='operator');
+ return {waiting:pipeline,waitingCount:pipeline.length,active};
 }
 export function waitingDuration(value,now=Date.now()){
  const minutes=Math.max(0,Math.floor((now-Date.parse(value))/60000));
@@ -363,7 +358,6 @@ function clearWaiting(messageText='Pripoj bridge na načítanie čakajúcich cha
  waitingRows=null;waitingTimeElements=[];$('tinder-waiting-count').textContent='0';$('tinder-waiting-list').replaceChildren();$('tinder-waiting-status').textContent=messageText;
 }
 function renderWaiting(details,aggregate){
- if(details!==null){const next=details;const keys=new Set(next.map(row=>row.stable_chat_id||row.channel+':'+row.case_id));for(const old of visiblePipelineRows(waitingRows||[]))if(old.state==='sent'&&!keys.has(old.stable_chat_id||old.channel+':'+old.case_id))next.push(old);details=next}
  waitingRows=details;details=details===null?null:visiblePipelineRows(details);
  const signature=JSON.stringify(details);if(signature!==waitingSignature){waitingSignature=signature;waitingVisible=100}
  const count=$('tinder-waiting-count'),status=$('tinder-waiting-status'),list=$('tinder-waiting-list');waitingTimeElements=[];list.replaceChildren();

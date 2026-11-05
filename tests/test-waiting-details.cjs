@@ -34,8 +34,8 @@ for(const invalid of [[pipeline,pipeline],[{...pipeline,stable_chat_id:'tinder:r
 for(const invalid of [null,{},new Array(10001).fill(valid[0]),[{...valid[0],case_id:'../../secret'}],[{...valid[0],name:''}],[{...valid[0],reason:''}],[{...valid[0],state:'sent'}],[{...valid[0],waiting_since:'not-a-date'}]])assert.throws(()=>context.validateWaitingDetails(invalid));
 const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 assert(html.indexOf('id="tinder-waiting"')>html.indexOf('id="statistics-panel"'),'waiting section follows statistics');
-assert(source.includes('validateWaitingDetails(p.awaiting_details)'),'client consumes the backend waiting-detail contract');
-assert(source.includes('p.waiting_count'),'client validates the full stalled-chat count rather than only operator questions');
+assert(source.includes('validatePipelineDetails(p.pipeline_details??[])'),'client uses only the current pipeline');
+assert(!source.includes('validateWaitingDetails(p.awaiting_details)'),'legacy waiting rows cannot reappear');
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
 assert(source.includes('setInterval(refreshWaitingDurations,1000)'),'elapsed times refresh without waiting for the network');
 assert(source.includes("row.automatic_resolution?' is-resolving':''"),'automatically resolvable transport problems render separately');
