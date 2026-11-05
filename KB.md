@@ -222,3 +222,9 @@ The transport directory is not a list of human decisions: it also contains histo
 - Kontakty sa spájajú výhradne presným stabilným `match_id`. Meno ako Simonka alebo Veronika nie je identita a nesmie rozhodovať o stave, vlastníctve, vylúčení ani párovaní.
 - Publikácia neaktívnych chatov obnovuje `updated_at` v štvor­minútových kontrolných oknách. Tým potvrdzuje aj nezmenený autoritatívny stav bez zápisu každú minútu. Ak sa kontrola alebo publikácia zastaví, Dashboard to po piatich minútach ukáže ako problém synchronizácie namiesto zobrazenia starých stavov.
 - Regresné testy musia pokryť čerstvý, starší a budúci čas, skrytie starého priebehu po chybe a odmietnutie duplicitného `match_id` aj pri rovnakom zobrazovanom mene.
+## 2026-11-05 — Autoritatívne časovanie priebehu chatov
+
+- Dashboard spája generácie iba podľa stabilnej identity odvodenej z `kanál + presné chat/match ID`; meno je výhradne prezentácia.
+- Zobrazuje prijatie → načítanie a prijatie → potvrdené doručenie. Celkový čas zastaví iba autoritatívne `confirmed_at`; `attempt_started`, hold ani `uncertain` ho nezastavia.
+- Potvrdený riadok zostáva viditeľný päť minút presne od `confirmed_at`. Novšia immutable generácia toho istého stabilného chatu potlačí staršiu projekciu bez mazania auditu.
+- Klient počíta živý čas lokálne a súkromný pipeline payload nepersistuje. Zapojené sú Tinder a Instagram, ktoré už majú presný lifecycle kontrakt; WhatsApp sa nepridáva odhadom.

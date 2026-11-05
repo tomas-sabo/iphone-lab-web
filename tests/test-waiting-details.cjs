@@ -25,6 +25,12 @@ assert.throws(()=>context.validateWaitingDetails([{...valid[0],stalled:true,auto
 assert.equal(context.waitingDuration('2026-10-23T14:29:50Z',now),'práve teraz');
 assert.equal(context.waitingDuration('2026-10-23T13:25:00Z',now),'1 h 5 min');
 assert.equal(context.waitingDuration('2026-10-21T11:30:00Z',now),'2 d 3 h');
+const pipeline={stable_chat_id:'tinder:0123456789abcdef01234567',case_id:'case-59808652bdb90ad9f14eddb3',channel:'tinder',name:'Dasha',reason:'Spracúva sa.',state:'attempt_started',pipeline_stage:'sending',waiting_since:'2026-10-23T14:00:00Z',incoming_received_at:'2026-10-23T13:59:00Z',stalled:false};
+assert.equal(context.validatePipelineDetails([pipeline])[0].stable_chat_id,pipeline.stable_chat_id);
+const sent={...pipeline,state:'sent',pipeline_stage:'sent',completed_at:'2026-10-23T14:05:00Z',confirmed_at:'2026-10-23T14:05:00Z',expires_at:'2026-10-23T14:10:00Z'};
+assert.equal(context.validatePipelineDetails([sent])[0].pipeline_stage,'sent');
+assert.equal(context.pipelineDuration(pipeline,Date.parse('2026-10-23T14:00:10Z')),'1 min 10 s');
+for(const invalid of [[pipeline,pipeline],[{...pipeline,stable_chat_id:'tinder:raw-match'}],[{...pipeline,pipeline_stage:'sent'}],[{...sent,expires_at:'2026-10-23T14:09:59Z'}]])assert.throws(()=>context.validatePipelineDetails(invalid));
 for(const invalid of [null,{},new Array(10001).fill(valid[0]),[{...valid[0],case_id:'../../secret'}],[{...valid[0],name:''}],[{...valid[0],reason:''}],[{...valid[0],state:'sent'}],[{...valid[0],waiting_since:'not-a-date'}]])assert.throws(()=>context.validateWaitingDetails(invalid));
 const html=fs.readFileSync(__dirname+'/../dist/index.html','utf8');
 assert(html.indexOf('id="tinder-waiting"')>html.indexOf('id="statistics-panel"'),'waiting section follows statistics');
@@ -35,9 +41,9 @@ assert(source.includes('setInterval(refreshWaitingDurations,1000)'),'elapsed tim
 assert(source.includes("row.automatic_resolution?' is-resolving':''"),'automatically resolvable transport problems render separately');
 assert(source.includes('Automaticky sa rieši'),'automatic resolution is explicit to the operator');
 assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
-assert(source.includes('setInterval(pollBridge,60000)'),'automatic full bridge polling is limited to once per minute');
+assert(source.includes('setInterval(pollBridge,300000)'),'automatic full bridge polling uses the current five-minute budget');
 assert(!source.includes('setInterval(pollBridge,15000)'),'legacy high-frequency polling is removed');
-assert(source.includes('const pendingDrafts=[...items].filter'),'explicit Refresh batches every answered request before fetching state');
+assert(source.includes('const pendingDrafts=pendingDraftItems()'),'explicit Refresh batches every answered request before fetching state');
 assert(source.includes('Odoslať všetky vyplnené vyjadrenia'),'Refresh uses one confirmation for the complete answer batch');
 assert(source.includes("null,true);if(!sent)return"),'individual writes reuse the single batch confirmation');
 assert(source.indexOf('for(const item of pendingDrafts)')<source.indexOf("message('Načítavam požiadavky…');await refresh()"),'Refresh sends answers before loading the new snapshot');
