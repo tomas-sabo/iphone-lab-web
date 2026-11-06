@@ -43,7 +43,7 @@ assert(source.includes('Automaticky sa rieši'),'automatic resolution is explici
 assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
 assert(source.includes('setInterval(pollBridge,300000)'),'automatic full bridge polling uses the current five-minute budget');
 assert(!source.includes('setInterval(pollBridge,15000)'),'legacy high-frequency polling is removed');
-assert(source.includes('const pendingDrafts=pendingDraftItems()'),'explicit Refresh batches every answered request before fetching state');
+assert(source.includes('let pendingDrafts=pendingDraftItems()'),'explicit Refresh batches every answered request before fetching state');
 assert(source.includes('Odoslať všetky vyplnené vyjadrenia'),'Refresh uses one confirmation for the complete answer batch');
 assert(source.includes("null,true);if(!sent)return"),'individual writes reuse the single batch confirmation');
 assert(source.indexOf('for(const item of pendingDrafts)')<source.indexOf("message('Načítavam požiadavky…');await refresh()"),'Refresh sends answers before loading the new snapshot');
