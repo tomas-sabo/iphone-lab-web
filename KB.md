@@ -228,3 +228,11 @@ The transport directory is not a list of human decisions: it also contains histo
 - Zobrazuje prijatie → načítanie a prijatie → potvrdené doručenie. Celkový čas zastaví iba autoritatívne `confirmed_at`; `attempt_started`, hold ani `uncertain` ho nezastavia.
 - Potvrdený riadok zostáva viditeľný päť minút presne od `confirmed_at`. Novšia immutable generácia toho istého stabilného chatu potlačí staršiu projekciu bez mazania auditu.
 - Klient počíta živý čas lokálne a súkromný pipeline payload nepersistuje. Zapojené sú Tinder a Instagram, ktoré už majú presný lifecycle kontrakt; WhatsApp sa nepridáva odhadom.
+
+## 2026-11-07 — Dôkazové stavy priebehu
+
+- Vek správy ani poradie vo FIFO nikdy samy neznamenajú technické zaseknutie. Staršie alebo neúplné projekcie sa zobrazia ako `delayed_unknown` („Stav sa overuje“).
+- `processing` vyžaduje živý lease presne viazaný na aktuálny case, context a stabilný chat. Heartbeat, meno kontaktu ani všeobecná aktivita workera nie sú dôkazom spracovania konkrétneho chatu.
+- `truly_stuck` vyžaduje presne naviazaný expirovaný lease, žiadny progress po jeho hranici a žiadne aktívne recovery ownership; samotný vek FIFO položky nestačí. Neistý sociálny POST zostáva `verification_required` a nikdy sa tým neautorizuje retry.
+- Operátorský stav `needs_user` platí iba s publikovaným presným dotazom. Bezpečnostné a obsahové holdy sú `safety_hold`; používateľ ich nemá schvaľovať.
+- Klient validuje `progress_state`, `stage_since`, `evidence_at` a sanitizovaný `evidence_code`. Filtre a počty používajú rovnaký validovaný kontrakt ako karty.

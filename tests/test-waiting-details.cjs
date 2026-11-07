@@ -38,8 +38,8 @@ assert(source.includes('validatePipelineDetails(p.pipeline_details??[])'),'clien
 assert(!source.includes('validateWaitingDetails(p.awaiting_details)'),'legacy waiting rows cannot reappear');
 assert(!source.includes('validateWaitingDetails(p.waiting_details)'),'legacy mismatched field cannot silently return');
 assert(source.includes('setInterval(refreshWaitingDurations,1000)'),'elapsed times refresh without waiting for the network');
-assert(source.includes("row.automatic_resolution?' is-resolving':''"),'automatically resolvable transport problems render separately');
-assert(source.includes('Automaticky sa rieši'),'automatic resolution is explicit to the operator');
+assert(source.includes("['safety_hold','verification_required','delayed_unknown'].includes(row.progress_state)"),'safety and verification states render separately');
+assert(source.includes('Nevyžaduje tvoje schválenie.'),'safety resolution is explicit to the operator');
 assert(source.includes("link.rel='noopener noreferrer'"),'chat link opens with opener isolation');
 assert(source.includes('setInterval(pollBridge,300000)'),'automatic full bridge polling uses the current five-minute budget');
 assert(!source.includes('setInterval(pollBridge,15000)'),'legacy high-frequency polling is removed');

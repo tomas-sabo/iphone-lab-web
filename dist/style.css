@@ -41,6 +41,7 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 .waiting-count{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 9px;border-radius:999px;background:#e5eee0;color:#143d35;font-size:.85rem}
 .tinder-waiting[open]>summary{border-bottom:1px solid #e1e7df}
 #tinder-waiting-status{margin:16px 20px}
+.waiting-buckets{display:flex;flex-wrap:wrap;gap:8px;margin:0 20px 14px}.waiting-bucket{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid transparent;border-radius:999px;background:#eef3ef;color:#354c44;font-size:.78rem;font-weight:650;min-height:auto}.waiting-bucket strong{color:#143d35}.waiting-bucket.is-ready{background:#e7f5ea;color:#23613d}.waiting-bucket.is-technical{background:#fff1df;color:#78420b}.waiting-bucket.is-stuck{background:#fff1f0;color:#9f1c12}.waiting-bucket.is-sent{background:#edf8ef;color:#23613d}.waiting-bucket.is-selected{border-color:currentColor;box-shadow:0 0 0 2px #fff inset}
 .waiting-list{padding:0 20px 8px}
 .waiting-chat{padding:16px 0;border-top:1px solid #e1e7df}
 .waiting-chat:first-child{border-top:0}
@@ -48,7 +49,7 @@ body{display:block;padding:calc(28px + env(safe-area-inset-top)) 20px calc(28px 
 .waiting-chat-name{font-size:1rem;font-weight:750;color:#143d35}
 .waiting-chat-time{flex:0 0 auto;font-size:.78rem;font-weight:650;color:#63746a}
 .waiting-chat-reason{margin:0;color:#354c44;font-size:.92rem;line-height:1.5;overflow-wrap:anywhere}
-@media(max-width:420px){.tinder-waiting>summary{padding:16px}.waiting-list{padding:0 16px 6px}#tinder-waiting-status{margin:14px 16px}.waiting-chat-header{align-items:flex-start;flex-direction:column;gap:3px}}
+@media(max-width:420px){.tinder-waiting>summary{padding:16px}.waiting-list{padding:0 16px 6px}#tinder-waiting-status{margin:14px 16px}.waiting-buckets{margin:0 16px 12px}.waiting-chat-header{align-items:flex-start;flex-direction:column;gap:3px}}
 
 #tinder-active-status{margin:14px 20px}
 
