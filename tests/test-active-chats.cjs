@@ -68,3 +68,10 @@ assert.equal(ctx.validatePipelineDetails([{...ig,open_url:'https://ig.me/m/fixtu
 assert.throws(()=>ctx.validatePipelineDetails([{...ig,open_url:'https://ig.me/m/fixture?redirect=evil'}]));
 
 ctx.renderWaiting([sent],1);ctx.renderWaiting([],0);assert.equal($('tinder-waiting-list').children.length,0,'A fresh empty pipeline never restores a previously sent card');
+
+const incident={...ig,stable_chat_id:'instagram-incident:'+'d'.repeat(24),incident_id:'ig-delivery-'+'e'.repeat(24),state:'transport_blocked',pipeline_stage:'held',display_category:'technical',automatic_resolution:true,operator_actionable:false,stalled:false,open_url:undefined};
+assert.equal(ctx.validatePipelineDetails([incident])[0].stable_chat_id,incident.stable_chat_id);
+assert.throws(()=>ctx.validatePipelineDetails([{...incident,operator_actionable:true}]));
+assert.throws(()=>ctx.validatePipelineDetails([{...incident,incident_id:'invalid'}]));
+assert.throws(()=>ctx.validatePipelineDetails([{...incident,open_url:'https://evil.test/'}]));
+console.log('Technical Instagram incidents cannot invalidate the complete chat projection and remain non-actionable.');
