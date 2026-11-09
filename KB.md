@@ -236,3 +236,11 @@ The transport directory is not a list of human decisions: it also contains histo
 - `truly_stuck` vyžaduje presne naviazaný expirovaný lease, žiadny progress po jeho hranici a žiadne aktívne recovery ownership; samotný vek FIFO položky nestačí. Neistý sociálny POST zostáva `verification_required` a nikdy sa tým neautorizuje retry.
 - Operátorský stav `needs_user` platí iba s publikovaným presným dotazom. Bezpečnostné a obsahové holdy sú `safety_hold`; používateľ ich nemá schvaľovať.
 - Klient validuje `progress_state`, `stage_since`, `evidence_at` a sanitizovaný `evidence_code`. Filtre a počty používajú rovnaký validovaný kontrakt ako karty.
+
+## 2026-11-09 — Súkromný VPN transport Dashboardu
+
+- Verzia 1.11.0 používa HTTPS API na Macu cez Tailscale Serve. GitHub zostáva zdrojom verejných vydaní, nie živou dátovou frontou.
+- Autentifikáciu poskytuje overená identita Tailscale. Frontend neposiela pôvodný GitHub token do VPN ani ho neprepisuje; poznámky, koncepty a remote nastavenia zostávajú zachované.
+- Refresh načíta jeden konzistentný snapshot všetkých hlavných sekcií. Detailné reporty sa dočítajú podľa potreby. Čítanie snapshotu nespúšťa ďalší cyklus agentov ani odosielanie správ.
+- Producenti aj rozhodnutia používajú spoločnú lokálnu databázu a kontrolu presného SHA. Konflikt sa musí zobraziť; nikdy nesmie naslepo prepísať novší stav. Po výpadku VPN sa neprenášajú zápisy do alternatívnej fronty na GitHube.
+- Backend počúva iba na loopback. Tailscale Funnel musí zostať vypnutý. HTTP API povoľuje iba overeného vlastníka, presný origin aplikácie a vlastnú hlavičku klienta.

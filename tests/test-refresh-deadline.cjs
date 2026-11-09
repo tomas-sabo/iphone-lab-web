@@ -3,7 +3,7 @@ const source=fs.readFileSync(__dirname+'/../dist/bridge.js','utf8');
 const start=source.indexOf('async function refresh(){'),end=source.indexOf('async function refreshContents(){',start);
 assert(start>=0&&end>start);
 let controller;
-const ctx={AbortController,Error,clearTimeout,setTimeout,REFRESH_TIMEOUT_MS:10,refreshController:null,
+const ctx={AbortController,Error,clearTimeout,setTimeout,REFRESH_TIMEOUT_MS:10,refreshController:null,vpnSnapshot:null,loadVpnSnapshot:async()=>{},
  refreshContents:async()=>{controller=ctx.refreshController;await new Promise((resolve,reject)=>controller.signal.addEventListener('abort',()=>reject(Error('aborted'))));}};
 vm.createContext(ctx);vm.runInContext(source.slice(start,end)+'this.refresh=refresh;',ctx);
 (async()=>{

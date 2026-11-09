@@ -8,15 +8,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="iPhone Lab" />
-    <link rel="manifest" href="./manifest.webmanifest?app_release=1.10.94" />
-    <link rel="apple-touch-icon" href="./icon-192.png?app_release=1.10.94" />
-    <link rel="icon" href="./icon.svg?app_release=1.10.94" />
-    <link rel="stylesheet" href="./style.css?app_release=1.10.94" />
+    <link rel="manifest" href="./manifest.webmanifest?app_release=1.11.0" />
+    <link rel="apple-touch-icon" href="./icon-192.png?app_release=1.11.0" />
+    <link rel="icon" href="./icon.svg?app_release=1.11.0" />
+    <link rel="stylesheet" href="./style.css?app_release=1.11.0" />
     <title>iPhone Lab</title>
   </head>
   <body>
     <main>
-      <p id="version">Verzia 1.10.94</p>
+      <p id="version">Verzia 1.11.0</p>
       <button id="update" type="button">Aktualizovať</button>
       <p id="status" role="status" aria-live="polite"></p>
       <section class="remote" aria-labelledby="remote-title">
@@ -93,9 +93,9 @@
         <h1>Pre Tomyho</h1>
         <p class="intro">Požiadavky podľa zdroja: Architekt, Tinder, Rafi, Robota, WhatsApp a Instagram.</p>
         <form id="connect">
-          <label for="bridge-token">Pripojenie k súkromnému bridge</label><input id="bridge-token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required placeholder="GitHub token pre bridge" />
-          <p class="hint">Token sa posiela iba GitHubu. Párovanie sa uloží v tomto zariadení a zostane aj po aktualizácii. Použi fine-grained token obmedzený na tomas-sabo/bridge, Contents: Read and write. Neukladaj ho do poznámok ani chatu.</p>
-          <button id="connect-button" type="submit">Pripojiť bridge</button>
+          <input id="bridge-token" type="hidden" value="" />
+          <p class="hint">Priame spojenie s MacBookom cez Tailscale. Zapni VPN s rovnakým účtom ako na MacBooku. Token GitHubu už netreba zadávať.</p>
+          <button id="connect-button" type="submit">Pripojiť cez VPN</button>
         </form>
         <div class="toolbar"><button id="disconnect" type="button" class="secondary" hidden>Zrušiť párovanie</button></div>
         <p id="operator-summary" role="status" aria-live="polite">Čakajúce požiadavky: 0 · Spolu: 0</p>
@@ -133,8 +133,8 @@
         <path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 18 17" /></svg
       ><span id="sync-count" hidden></span>
     </button>
-    <script src="./app.js?app_release=1.10.94" defer></script>
-    <script type="module" src="./bridge.js?app_release=1.10.94"></script>
-    <script src="./remote.js?app_release=1.10.94" defer></script>
+    <script src="./app.js?app_release=1.11.0" defer></script>
+    <script type="module" src="./bridge.js?app_release=1.11.0"></script>
+    <script src="./remote.js?app_release=1.11.0" defer></script>
   </body>
 </html>
