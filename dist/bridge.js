@@ -656,7 +656,7 @@ export function validateInstagramContacts(data){
  if(data?.schema_version!==1||!Array.isArray(data.contacts)||data.contacts.length>1000)throw Error('Neplatné Instagram kontakty.');
  const ids=new Set();return data.contacts.map(c=>{
   if(!c||typeof c.name!=='string'||!c.name.trim()||c.name.length>160||!['paired','unpaired'].includes(c.state))throw Error('Neplatný Instagram kontakt.');
-  if(c.state==='unpaired'){
+  if(c.state==='unpaired'||(c.api_verified===true&&c.open_url==='https://ig.me/m/'+c.username)){
    if(c.api_verified===true){
     if(typeof c.username!=='string'||!/^[A-Za-z0-9_.]{1,30}$/.test(c.username)||c.open_url!=='https://ig.me/m/'+c.username||ids.has('api:'+c.username))throw Error('Neplatné Instagram API párovanie.');
     ids.add('api:'+c.username);return {name:c.name,state:'paired',api_verified:true,username:c.username,open_url:c.open_url};
