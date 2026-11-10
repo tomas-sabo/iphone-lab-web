@@ -8,15 +8,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="iPhone Lab" />
-    <link rel="manifest" href="./manifest.webmanifest?app_release=1.11.1" />
-    <link rel="apple-touch-icon" href="./icon-192.png?app_release=1.11.1" />
-    <link rel="icon" href="./icon.svg?app_release=1.11.1" />
-    <link rel="stylesheet" href="./style.css?app_release=1.11.1" />
+    <link rel="manifest" href="./manifest.webmanifest?app_release=1.12.0" />
+    <link rel="apple-touch-icon" href="./icon-192.png?app_release=1.12.0" />
+    <link rel="icon" href="./icon.svg?app_release=1.12.0" />
+    <link rel="stylesheet" href="./style.css?app_release=1.12.0" />
     <title>iPhone Lab</title>
   </head>
   <body>
     <main>
-      <p id="version">Verzia 1.11.1</p>
+      <p id="version">Verzia 1.12.0</p>
       <button id="update" type="button">Aktualizovať</button>
       <p id="status" role="status" aria-live="polite"></p>
       <section class="remote" aria-labelledby="remote-title">
@@ -84,7 +84,7 @@
         <div id="tinder-active-list" class="waiting-list"></div>
       </details>
       <details id="tinder-no-action" class="tinder-waiting">
-        <summary><span>Spracované bez odpovede</span><span id="tinder-no-action-count" class="waiting-count">0</span></summary>
+        <summary><span>Spracované bez odpovede · posledné 3 dni</span><span id="tinder-no-action-count" class="waiting-count">0</span></summary>
         <p id="tinder-no-action-status" class="hint" role="status">Pripoj bridge na načítanie uzavretých chatov.</p>
         <button id="tinder-no-action-refresh" type="button" class="secondary no-action-refresh" disabled>↻ Obnoviť konverzácie</button>
         <ul id="tinder-no-action-list" class="contact-list"></ul>
@@ -133,8 +133,8 @@
         <path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 18 17" /></svg
       ><span id="sync-count" hidden></span>
     </button>
-    <script src="./app.js?app_release=1.11.1" defer></script>
-    <script type="module" src="./bridge.js?app_release=1.11.1"></script>
-    <script src="./remote.js?app_release=1.11.1" defer></script>
+    <script src="./app.js?app_release=1.12.0" defer></script>
+    <script type="module" src="./bridge.js?app_release=1.12.0"></script>
+    <script src="./remote.js?app_release=1.12.0" defer></script>
   </body>
 </html>

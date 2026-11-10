@@ -244,3 +244,11 @@ The transport directory is not a list of human decisions: it also contains histo
 - Refresh načíta jeden konzistentný snapshot všetkých hlavných sekcií. Detailné reporty sa dočítajú podľa potreby. Čítanie snapshotu nespúšťa ďalší cyklus agentov ani odosielanie správ.
 - Producenti aj rozhodnutia používajú spoločnú lokálnu databázu a kontrolu presného SHA. Konflikt sa musí zobraziť; nikdy nesmie naslepo prepísať novší stav. Po výpadku VPN sa neprenášajú zápisy do alternatívnej fronty na GitHube.
 - Backend počúva iba na loopback. Tailscale Funnel musí zostať vypnutý. HTTP API povoľuje iba overeného vlastníka, presný origin aplikácie a vlastnú hlavičku klienta.
+
+## 2026-11-10 — Obnovenie aktívnych a neaktívnych chatov
+
+- Neaktívne kontakty zobrazujú čas od `inactive_since`; aktívne čas od poslednej odoslanej správy.
+- Jednotlivé aj hromadné tlačidlo novej témy uloží presný nemenný zoznam match ID do súkromného bridge. Dávka zahŕňa celú vybranú sekciu, neskracuje sa na prvých desať.
+- Existujúci collector spracuje najviac tri kontakty v jednej iterácii. Pred prípravou znovu overí členstvo, aktuálnu históriu, vlastníctvo a blokácie. Reštart či opakované načítanie nesmie vytvoriť duplicitný návrh pre ten istý príkaz a kontakt.
+- Obnoviť sa môže iba vylúčenie kvôli neaktivite. Ručné, externé a bezpečnostné vylúčenia zostávajú zachované. Príprava návrhu sama nemení stav na odoslané ani na aktívny.
+- „Spracované bez odpovede“ obsahuje iba chaty s poslednou prijatou správou za posledné tri dni. Staršie záznamy ostávajú v histórii.
