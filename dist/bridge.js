@@ -13,7 +13,7 @@ const NO_ACTION_REFRESH_PATH='/contents/operator/tinder-no-action-refresh.json',
 let noActionRefreshBusy=false,noActionRefreshPending=null,noActionRefreshMessage='',noActionRefreshChecked=0;
 try{noActionRefreshPending=JSON.parse(localStorage.getItem(NO_ACTION_PENDING_KEY)||'null')}catch{}
 let noActionTimeElements=[],noActionChats=[],incomingScannedAt=null,noActionVisible=100,bridgeHealthText='';
-let inactiveTimeElements=[];
+let inactiveTimeElements=[],inactiveSendingProgress=null;
 let inactiveChats=[],inactiveStatus='Pripoj bridge na načítanie neaktívnych chatov.',progressUpdatedAt=null;
 let whatsappControl=null,whatsappSaving=false,whatsappPending=false,whatsappDesired=null,whatsappControlError='',whatsappPendingUntil=0;
 let whatsappNames=[],whatsappUnassigned=[],whatsappManual=[],whatsappListStatus='Pripoj bridge na načítanie kontaktov.';
@@ -153,7 +153,7 @@ async function requestNoActionRefresh(caseIds){
 }
 function refreshUnavailable(){return !token||working||noActionRefreshBusy||Boolean(noActionRefreshPending)}
 function matchFromChat(row){return row.match_id||new URL(validateTinderChatUrl(row.open_url)).pathname.split('/').at(-1)}
-function refreshChatButton(scope,rows,all=false){const button=element('button',all?'↻ Nová téma pre celú sekciu':'↻ Nová téma','secondary no-action-refresh');button.type='button';button.disabled=refreshUnavailable()||!rows.length;button.onclick=()=>requestChatRefresh(scope,rows.map(matchFromChat));return button}
+function refreshChatButton(scope,rows,all=false){const selection=rows.slice(0,10),button=element('button',all?'↻ Nová téma (max. 10)':'↻ Nová téma','secondary no-action-refresh');button.type='button';button.disabled=refreshUnavailable()||!selection.length;button.onclick=()=>requestChatRefresh(scope,selection.map(matchFromChat));return button}
 async function requestChatRefresh(scope,ids){
  if(refreshUnavailable()||!['active','inactive'].includes(scope)||!ids.length||ids.length>1000)return;
  const rows=scope==='active'?activeChatRows||[]:inactiveChats.filter(c=>c.state==='inactive');const allowed=new Set(rows.map(matchFromChat));
@@ -262,7 +262,9 @@ function render(){
  const pendingInactive=visible.filter(i=>i.record.request.source==='inactive');
  const inactive=element('details',undefined,'request-group inactive-contacts');inactive.open=groupOpen.get('inactive-contacts')||pendingInactive.length>0;
  const inactiveTitle=element('summary','Neaktívni','group-heading');inactiveTitle.append(element('span',`${pendingInactive.length}/${inactiveChats.filter(c=>c.state==='inactive').length}`,'group-count'));inactiveTitle.onclick=()=>groupOpen.set('inactive-contacts',!inactive.open);
- inactive.append(inactiveTitle,refreshChatButton('inactive',inactiveChats.filter(c=>c.state==='inactive'),true));
+ inactive.append(inactiveTitle);
+ const progress=inactiveSendingProgress||{sent:0,total:inactiveChats.filter(c=>c.state==='inactive').length};if(progress){const label=element('p',`${progress.sent} / ${progress.total} odoslaných`,'inactive-send-count'),bar=element('progress');bar.max=progress.total||1;bar.value=progress.sent;bar.setAttribute('aria-label','Potvrdene odoslané správy neaktívnym kontaktom');inactive.append(label,bar)}
+ inactive.append(refreshChatButton('inactive',inactiveChats.filter(c=>c.state==='inactive'),true));
  if(noActionRefreshPending?.scope==='inactive')inactive.append(element('p',noActionRefreshMessage,'hint'));inactiveTimeElements=[];
  for(const item of pendingInactive){const card=element('article',undefined,'request');card.append(element('h3',item.record.request.title));const chatUrl=inactiveRequestChatLink(item);if(chatUrl)appendTinderActions(card,chatUrl);card.append(element('p',item.record.request.body));const controls=element('div',undefined,'decision-buttons');for(const [outcome,label] of [['approved','Áno, zaradiť medzi aktívne'],['rejected','Nie, ponechať neaktívny']]){const button=element('button',label);button.type='button';button.disabled=working;button.onclick=()=>decide(item,outcome);controls.append(button)}card.append(controls);inactive.append(card)}
  const inactiveList=element('ul',undefined,'contact-list');
@@ -708,10 +710,10 @@ async function loadInstagramContacts(){
 }
 export function validateInactiveChats(data){
  if(data?.schema_version!==1||!projectionFresh(data.updated_at)||!Array.isArray(data.chats)||data.chats.length>10000||data.total!==data.chats.length||!Number.isSafeInteger(data.pending)||data.pending!==data.chats.filter(c=>c?.state==='reactivation_pending').length)throw Error('Neplatný alebo zastaraný zoznam neaktívnych chatov.');
- const ids=new Set(),rows=data.chats.map(c=>{if(!c||typeof c.match_id!=='string'||!/^[A-Za-z0-9_-]{3,160}$/.test(c.match_id)||ids.has(c.match_id)||typeof c.name!=='string'||!c.name.trim()||c.name.length>160||!['inactive','reactivation_pending'].includes(c.state))throw Error('Neplatný neaktívny chat.');ids.add(c.match_id);const open_url=validateTinderChatUrl(c.open_url);if(new URL(open_url).pathname!=='/app/messages/'+c.match_id)throw Error('Nesúhlasí odkaz na chat.');return {...c,name:c.name.trim(),open_url}});return {rows,updated_at:data.updated_at};
+ const ids=new Set(),rows=data.chats.map(c=>{if(!c||typeof c.match_id!=='string'||!/^[A-Za-z0-9_-]{3,160}$/.test(c.match_id)||ids.has(c.match_id)||typeof c.name!=='string'||!c.name.trim()||c.name.length>160||!['inactive','reactivation_pending'].includes(c.state))throw Error('Neplatný neaktívny chat.');ids.add(c.match_id);const open_url=validateTinderChatUrl(c.open_url);if(new URL(open_url).pathname!=='/app/messages/'+c.match_id)throw Error('Nesúhlasí odkaz na chat.');return {...c,name:c.name.trim(),open_url}});const p=data.sending_progress;if(p!==undefined&&p!==null&&(!Number.isSafeInteger(p.sent)||!Number.isSafeInteger(p.total)||p.sent<0||p.total<1||p.sent>p.total))throw Error('Neplatný priebeh odosielania.');return {rows,updated_at:data.updated_at,sending_progress:p||null};
 }
 async function loadInactiveChats(){
- try{const value=embeddedInactive&&projectionFresh(embeddedInactive.updated_at)?embeddedInactive:decode((await api('/contents/operator/tinder-inactive.json?ref=main')).content);const projection=validateInactiveChats(value);if(!token)return;inactiveChats=projection.rows;inactiveStatus=projection.rows.length?'Aktuálny zoznam podľa presných match ID.':'Žiadne neaktívne chaty.';render();return true}
+ try{const value=embeddedInactive&&projectionFresh(embeddedInactive.updated_at)?embeddedInactive:decode((await api('/contents/operator/tinder-inactive.json?ref=main')).content);const projection=validateInactiveChats(value);if(!token)return;inactiveChats=projection.rows;inactiveSendingProgress=projection.sending_progress;inactiveStatus=projection.rows.length?'Aktuálny zoznam podľa presných match ID.':'Žiadne neaktívne chaty.';render();return true}
  catch{inactiveChats=[];inactiveStatus='Zoznam neaktívnych chatov nie je čerstvý. Staré údaje boli skryté; skús synchronizáciu znova.'}
  render();return false;
 }
