@@ -836,12 +836,11 @@ async function readProgress(){
   if(p.schema_version!==1||p.scope!=='initial_round'||!['sent','total','blocked','ready','uncertain','stale'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0&&p[k]<=100000)||p.sent>p.total||!projectionFresh(p.updated_at))throw Error('Invalid or stale progress');const closed=validateNoActionDetails(p.no_action_details);const chats=chatProjections(p);await applyOperatorInbox(p);noActionChats=closed;await loadNoActionRefresh();progressUpdatedAt=p.updated_at;embeddedInactive=p.inactive_projection?{...p.inactive_projection,updated_at:p.updated_at}:null;bridgeHealthText=bridgeHealthMessage(p.bridge_health);incomingScannedAt=Number.isFinite(Date.parse(p.incoming_scanned_at))&&Date.parse(p.incoming_scanned_at)<=Date.now()+30000?p.incoming_scanned_at:null;renderWaiting(chats.waiting,chats.waitingCount);renderActive(chats.active);
   showAutomation(p.automation);
   renderChannelTotals(p.channels);
-  if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0&&Number.isSafeInteger(p.messages_in_resolution)&&p.messages_in_resolution>=0){
-   const tracked=Number.isSafeInteger(p.messages_tracked_for_chart)&&p.messages_tracked_for_chart>=p.messages_sent_overall?p.messages_tracked_for_chart:p.messages_sent_overall+p.messages_in_resolution;
-   $('tinder-overall-count').textContent=`Odoslané celkovo: ${p.messages_sent_overall} · V riešení: ${p.messages_in_resolution}`;
-   $('tinder-overall-meter').max=tracked||1;$('tinder-overall-meter').value=p.messages_sent_overall;
-  }else $('tinder-overall-count').textContent='Celkový údaj zatiaľ nie je dostupný.';
   const batchOk=['current_batch_total','current_batch_sent','current_batch_resolved','current_batch_in_resolution'].every(k=>Number.isSafeInteger(p[k])&&p[k]>=0)&&p.current_batch_resolved<=p.current_batch_total;
+  if(Number.isSafeInteger(p.messages_sent_overall)&&p.messages_sent_overall>=0){
+   $('tinder-overall-count').textContent=`Odoslané celkovo: ${p.messages_sent_overall}`;
+   $('tinder-overall-meter').max=Math.max(1,p.messages_sent_overall+(batchOk?p.current_batch_in_resolution:0));$('tinder-overall-meter').value=p.messages_sent_overall;
+  }else $('tinder-overall-count').textContent='Celkový údaj zatiaľ nie je dostupný.';
   $('tinder-count').textContent=batchOk?(p.current_batch_source==='manual'?`Aktuálna várka: ${p.current_batch_sent} / ${p.current_batch_total} odoslaných`:`Aktuálna várka: ${p.current_batch_resolved} / ${p.current_batch_total} vybavených`):'Údaj o aktuálnej várke zatiaľ nie je dostupný.';
   $('tinder-meter').max=batchOk?(p.current_batch_total||1):1;$('tinder-meter').value=batchOk?p.current_batch_resolved:0;
   $('tinder-detail').textContent=batchOk?`Aktuálne v riešení: ${p.current_batch_in_resolution}${Number.isSafeInteger(p.current_batch_held)&&p.current_batch_held>0?' · Držané: '+p.current_batch_held:''} · Z várky odoslané: ${p.current_batch_sent} · Posledná zmena: ${new Date(p.updated_at).toLocaleString('sk-SK')} · Načítané: ${new Date().toLocaleTimeString('sk-SK')}`:'Obnovenie aktuálnej várky zlyhalo.';
